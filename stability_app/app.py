@@ -31,6 +31,7 @@ from excel_ui import (
     x_g_to_from_ap,
 )
 from ship_data import SHIP
+from ship_diagram import load_plan_figure
 from stability import (
     cargo_mass_from_drafts,
     draft_from_displacement,
@@ -276,13 +277,23 @@ with tab_stab:
     with st.container(border=True):
         st.markdown("##### Уголь (насыпной груз в трюмах)")
         st.caption(x_note)
-        u1, u2, u3 = st.columns(3)
+        u1, u2 = st.columns(2)
         with u1:
             m_coal = st.number_input("Масса угля, т", 0.0, 20000.0, key="stab_m_coal", step=50.0)
         with u2:
-            x_coal = st.number_input("X угля, м", -200.0, 200.0, key="stab_x_coal", step=0.01)
-        with u3:
             kg_coal = st.number_input("KG угля, м", 0.0, 20.0, key="stab_kg_coal", step=0.01)
+        if x_from_midship:
+            _coal_x_rng = (-float(LBP_M) / 2.0 - 5.0, float(LBP_M) / 2.0 + 5.0)
+        else:
+            _coal_x_rng = (-1.0, float(LBP_M) + 2.0)
+        x_coal = st.slider(
+            "X угля, м (ползунок вдоль длины; на плане ниже тот же груз в координатах от кормы)",
+            float(_coal_x_rng[0]),
+            float(_coal_x_rng[1]),
+            key="stab_x_coal",
+            step=0.05,
+            help="Совпадает с колонкой X в таблице. План судна показывает LCG от кормы.",
+        )
 
     tank_mass = [float(st.session_state.get(f"stab_t{i}", 0.0)) for i in range(9)]
 
@@ -309,6 +320,21 @@ with tab_stab:
         rows.append({COL_NAME: "Уголь", COL_MASS: m_coal, COL_X: x_coal, COL_KG: kg_coal})
 
     edited = pd.DataFrame(rows)
+    with st.container(border=True):
+        st.markdown("##### План судна (вид сверху)")
+        st.caption(
+            "Прямоугольник — корпус по длине **LOA**; пунктир — **мидель** (LBP/2 от кормы). "
+            "Точки — центры масс строк загрузки; ось совпадает с **LCG от кормы** (как в гидростатике)."
+        )
+        fig_plan = load_plan_figure(
+            edited,
+            LBP_M,
+            float(SHIP["loa_m"]),
+            float(SHIP["beam_m"]),
+            from_midship=x_from_midship,
+        )
+        st.plotly_chart(fig_plan, use_container_width=True)
+
     tbl_excel = trim_table_excel_with_total(
         edited, x_from_midship=x_from_midship, lbp_m=LBP_M
     )
