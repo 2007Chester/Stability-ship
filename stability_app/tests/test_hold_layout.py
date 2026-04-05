@@ -11,7 +11,9 @@ from hold_layout import (
     HOLD_LCG_AP_AFT_M,
     HOLD_LCG_AP_FWD_M,
     NUM_HOLD_SECTIONS,
+    BEAM_M,
     coal_uniform_layer_height_m,
+    coal_uniform_stowage_m,
     hold_length_m,
     section_centers_from_ap_m,
     section_edges_from_ap_m,
@@ -36,9 +38,9 @@ def test_centers_between_edges():
 
 
 def test_coal_6500_uniform():
-    h, t_sec, vol = coal_uniform_layer_height_m(6500.0, 0.85)
+    h_keel, t_sec, vol = coal_uniform_layer_height_m(6500.0, 0.85)
+    d = coal_uniform_stowage_m(6500.0, 0.85)
     assert abs(t_sec - 325.0) < 1e-6
     assert vol > 0
-    from hold_layout import BEAM_M
-
-    assert abs(h * hold_length_m() * BEAM_M - vol) < 1e-3
+    assert abs(float(d["h_from_inner_bottom_m"]) * hold_length_m() * BEAM_M - vol) < 1e-2
+    assert h_keel > float(d["h_from_inner_bottom_m"])

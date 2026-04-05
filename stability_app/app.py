@@ -40,12 +40,15 @@ from excel_ui import (
 from hold_diagram import build_hold_profile_figure
 from hold_layout import (
     BEAM_M,
+    COAMING_HEIGHT_ABOVE_DECK_M,
     FRAME_SPACING_MAIN_M,
     HOLD_LCG_AP_AFT_M,
     HOLD_LCG_AP_FWD_M,
+    INNER_BOTTOM_ABOVE_KEEL_M,
     NUM_HOLD_SECTIONS,
-    coal_uniform_layer_height_m,
+    coal_uniform_stowage_m,
     hold_length_m,
+    hold_stowage_height_limit_m,
 )
 from ship_data import SHIP
 from sounding_tables import load_fresh_sounding_tables, table_for_fresh_tank, tons_from_sounding_mm
@@ -745,9 +748,9 @@ with tab_hold_view:
     st.markdown("## Схема грузового трюма (профиль)")
     st.caption(
         f"Размеры судна — **LOA {SHIP['loa_m']} м**, **LBP {LBP_M} м**, **D {SHIP['depth_m']} м**, **B {BEAM_M} м** (буклет). "
-        f"Границы трюма по длине (от кормы): **{HOLD_LCG_AP_AFT_M:.0f}…{HOLD_LCG_AP_FWD_M:.0f} м** — ориентир по типовой компоновке SPB 3210; "
-        "уточните по чертежу GA при необходимости. Шаг шпангоутов на основном участке: "
-        f"**{FRAME_SPACING_MAIN_M} м** — секции на схеме **равномерные по длине трюма** ({NUM_HOLD_SECTIONS} шт.), для планирования загрузки."
+        f"Границы трюма по длине (от кормы): **{HOLD_LCG_AP_AFT_M:.0f}…{HOLD_LCG_AP_FWD_M:.0f} м** — ориентир по GA; "
+        f"внутреннее дно над килем **{INNER_BOTTOM_ABOVE_KEEL_M} м**, комингсы над палубой **~{COAMING_HEIGHT_ABOVE_DECK_M} м** (правьте в `hold_layout.py` по чертежу). "
+        f"Шаг шпангоутов: **{FRAME_SPACING_MAIN_M} м**; **{NUM_HOLD_SECTIONS}** равных секций по длине трюма."
     )
 
     t_fwd_d = float(st.session_state.get("holds_t_fwd", float(SHIP.get("draft_summer_m", 4.439))))
@@ -765,17 +768,24 @@ with tab_hold_view:
     c3.metric("Масса угля (т)", f"{m_coal_d:,.0f}".replace(",", " "))
     c4.metric("Плотность угля (т/м³)", f"{rho_d:.2f}")
 
-    h_layer, t_per_sec, vol_m3 = coal_uniform_layer_height_m(m_coal_d, rho_d)
-    if h_layer > float(SHIP["depth_m"]) + 1e-6:
+    stow_d = coal_uniform_stowage_m(m_coal_d, rho_d)
+    h_from_tt = float(stow_d["h_from_inner_bottom_m"])
+    clr_coom = float(stow_d["clearance_cooming_m"])
+    vol_m3 = float(stow_d["volume_m3"])
+    t_per_sec = float(stow_d["tons_per_section"])
+    capped = bool(stow_d["capped_by_cooming"])
+
+    if capped:
         st.warning(
-            f"Ориентировочная высота слоя **{h_layer:.2f} м** превышает высоту борта **{SHIP['depth_m']} м** — "
-            "модель «ровный слой на всё дно» не помещается; проверьте плотность/массу или учёт пересыпи."
+            f"При ρ = **{rho_d:.2f}** т/м³ для **{m_coal_d:.0f} т** нужна высота насыпи **{float(stow_d['h_if_unlimited_m']):.2f} м** от внутреннего дна — "
+            f"больше, чем до верха комингсов (**{hold_stowage_height_limit_m():.2f} м**). Уменьшите массу/увеличьте ρ или уточните габариты трюма на чертеже."
         )
 
     st.info(
-        f"**Равномерно по {NUM_HOLD_SECTIONS} секциям:** ~**{t_per_sec:.1f} т** на секцию (≈ **{m_coal_d / NUM_HOLD_SECTIONS:.2f} т** при точном делении). "
-        f"**Ровный слой угля** по площади дна трюма (длина **{hold_length_m():.1f} м** × ширина **{BEAM_M} м**): высота **≈ {min(h_layer, float(SHIP['depth_m'])):.2f} м** "
-        f"(объём груза **≈ {vol_m3:,.0f} м³**). Центр тяжести слоя над килем ~**{0.5 * min(h_layer, float(SHIP['depth_m'])):.2f}** м — для точного KG используйте вкладку «Остойчивость»."
+        f"**Равномерно по {NUM_HOLD_SECTIONS} секциям:** ~**{t_per_sec:.1f} т** на секцию. "
+        f"**Высота насыпи от внутреннего дна трюма:** **{h_from_tt:.2f} м**; "
+        f"**зазор от поверхности груза до верха комингсов:** **{clr_coom:.2f} м** (при ровном слое L×B). "
+        f"Объём груза **≈ {vol_m3:,.0f} м³**. Точный **KG** — на вкладке «Остойчивость»."
     )
 
     fig_h = build_hold_profile_figure(
@@ -783,17 +793,15 @@ with tab_hold_view:
         t_aft_m=t_aft_d,
         coal_mass_t=m_coal_d,
         rho_coal_t_m3=rho_d,
-        coal_fill_height_m=min(h_layer, float(SHIP["depth_m"])),
-        tons_per_section=m_coal_d / NUM_HOLD_SECTIONS,
     )
     st.plotly_chart(fig_h, use_container_width=True)
 
     with st.expander("Как читать схему"):
         st.markdown(
             f"""
-- **Ось X** — расстояние **от шп. кормы** вдоль киля (как LCG в буклете), **Y** — высота от киля.
-- **Корпус** — упрощённо прямоугольник по **LBP** и **D**; **ватерлиния** — прямая между осадкой у кормы и у носа (линейный дифферент).
-- **Трюм** — заштрихованная зона по длине **{HOLD_LCG_AP_AFT_M:.0f}–{HOLD_LCG_AP_FWD_M:.0f} м**; **20 секций** — равные доли длины трюма (**~{hold_length_m() / NUM_HOLD_SECTIONS:.2f} м** каждая); на схеме **1** — со стороны кормы, **20** — со стороны носа (сверьте с судовой нумерацией).
-- **Коричневый** слой — ориентир **равной высоты** угля по всему дну трюма для заданной массы и ρ; реальная поверхность насыпи может быть конусообразной.
+- **Ось X** — от **шп. кормы**, **Y** — от **киля** вверх (как на GA).
+- **Корпус** — между перпендикулярами **LBP × D**; **двойное дно** — до внутреннего дна трюма; **главная палуба** на уровне молдинга **D**; **комингсы** — над палубой в зоне люка.
+- **Трюм** — по длине **{HOLD_LCG_AP_AFT_M:.0f}–{HOLD_LCG_AP_FWD_M:.0f} м**; **20 секций** (~**{hold_length_m() / NUM_HOLD_SECTIONS:.2f} м**); **1** у кормы, **20** у носа (сверьте с бортом).
+- **Уголь** — от **внутреннего дна**; пунктир — **поверхность груза**; подпись — **зазор до верха комингсов** (высота груза относительно комингсов).
             """
         )
