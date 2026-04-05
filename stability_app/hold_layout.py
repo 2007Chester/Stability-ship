@@ -68,8 +68,8 @@ def main_deck_above_keel_m() -> float:
 
 def hold_moulded_depth_m() -> float:
     """
-    Глубина грузового трюма: от **главной палубы** (молдинг D) вниз до **внутреннего дна**.
-    Трюм на судне задаётся сверху главной палубой, снизу — дном трюма (верх двойного дна).
+    Глубина трюма **под главной палубой**: от линии главной палубы до внутреннего дна (м).
+    Выше главной палубы — комингсы люка; ниже — грузовой трюм до дна.
     """
     return float(DEPTH_M) - float(INNER_BOTTOM_ABOVE_KEEL_M)
 
@@ -86,10 +86,10 @@ def hold_stowage_height_limit_m() -> float:
 
 def coal_uniform_stowage_m(mass_t: float, rho_t_m3: float) -> dict[str, Any]:
     """
-    Ровный слой угля по площади трюма L×B от **внутреннего дна**; верх — не выше комингсов.
+    Ровный слой угля по площади L×B от внутреннего дна; верх груза не выше верха комингсов.
 
-    Грузовой трюм ограничен **сверху главной палубой** (ниже неё — насыпь). «Зазор до комингсов» —
-    от поверхности груза до верха комингсов.
+    **Выше главной палубы** — борт комингсов; **от палубы вверх** до верха комингсов — `COAMING_HEIGHT_ABOVE_DECK_M`.
+    Зазор **от поверхности груза вверх** до верха комингсов — `clearance_cooming_m`.
     """
     L = hold_length_m()
     B = BEAM_M
@@ -106,7 +106,8 @@ def coal_uniform_stowage_m(mass_t: float, rho_t_m3: float) -> dict[str, Any]:
             "capped_by_cooming": False,
             "h_if_unlimited_m": 0.0,
             "hold_depth_moulded_m": float(hd),
-            "depth_from_main_deck_to_cargo_m": float(hd),
+            "cargo_surface_below_main_deck_m": float(hd),
+            "coaming_height_above_main_deck_m": float(COAMING_HEIGHT_ABOVE_DECK_M),
         }
     vol = float(mass_t) / float(rho_t_m3)
     h_need = vol / (L * B)
@@ -114,8 +115,8 @@ def coal_uniform_stowage_m(mass_t: float, rho_t_m3: float) -> dict[str, Any]:
     h = min(h_need, h_lim)
     clearance = max(0.0, h_lim - h)
     t_sec = float(mass_t) / float(NUM_HOLD_SECTIONS)
-    # Расстояние от главной палубы вниз до поверхности груза (как на практике отсчитывают заполнение)
-    depth_deck_to_cargo = max(0.0, float(y_deck) - y_tt - float(h))
+    # Насколько поверхность груза ниже линии главной палубы (м); «вверх» от груза — к палубе и комингсам
+    cargo_below_deck = max(0.0, float(y_deck) - y_tt - float(h))
     return {
         "h_from_inner_bottom_m": float(h),
         "clearance_cooming_m": float(clearance) if not capped else 0.0,
@@ -124,7 +125,8 @@ def coal_uniform_stowage_m(mass_t: float, rho_t_m3: float) -> dict[str, Any]:
         "capped_by_cooming": capped,
         "h_if_unlimited_m": float(h_need),
         "hold_depth_moulded_m": float(hd),
-        "depth_from_main_deck_to_cargo_m": float(depth_deck_to_cargo),
+        "cargo_surface_below_main_deck_m": float(cargo_below_deck),
+        "coaming_height_above_main_deck_m": float(COAMING_HEIGHT_ABOVE_DECK_M),
     }
 
 

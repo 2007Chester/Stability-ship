@@ -49,7 +49,8 @@ def build_hold_profile_figure(
 
     stow: dict[str, Any] = coal_uniform_stowage_m(coal_mass_t, rho_coal_t_m3)
     h_cargo = float(stow["h_from_inner_bottom_m"])
-    depth_deck_to_cargo = float(stow["depth_from_main_deck_to_cargo_m"])
+    cargo_below_deck = float(stow["cargo_surface_below_main_deck_m"])
+    h_coom_above = float(stow["coaming_height_above_main_deck_m"])
     hold_moulded = float(stow["hold_depth_moulded_m"])
     clearance = float(stow["clearance_cooming_m"])
     capped = bool(stow["capped_by_cooming"])
@@ -95,7 +96,7 @@ def build_hold_profile_figure(
             line=dict(color="#2874a6", width=1.5, dash="dot"),
             fill="toself",
             fillcolor="rgba(133, 193, 233, 0.2)",
-            name="Грузовой трюм (от гл. палубы вниз)",
+            name="Грузовой трюм (под гл. палубой)",
             hoverinfo="skip",
         )
     )
@@ -183,7 +184,7 @@ def build_hold_profile_figure(
             fig.add_annotation(
                 x=0.5 * (ha + hf),
                 y=0.5 * (y_cargo_top + y_coom),
-                text=f"Зазор до верха<br>комингсов<br><b>{clearance:.2f} м</b>",
+                text=f"Вверх до верха<br>комингсов<br><b>{clearance:.2f} м</b>",
                 showarrow=False,
                 font=dict(size=11, color="#1b2631"),
                 bgcolor="rgba(255,255,255,0.85)",
@@ -224,7 +225,7 @@ def build_hold_profile_figure(
     fig.add_annotation(
         x=lbp * 0.02,
         y=y_deck + 0.05,
-        text="Главная палуба — верх трюма",
+        text="Главная палуба (ниже — трюм; выше — комингсы)",
         showarrow=False,
         font=dict(size=10, color="#34495e"),
         xanchor="left",
@@ -232,7 +233,7 @@ def build_hold_profile_figure(
     fig.add_annotation(
         x=hf + 0.8,
         y=y_coom,
-        text="Верх комингсов",
+        text="Верх комингсов (выше палубы)",
         showarrow=True,
         arrowhead=2,
         ax=40,
@@ -279,16 +280,17 @@ def build_hold_profile_figure(
 
     sub = (
         "<b>Масштаб чертежа:</b> оси X и Y в одинаковых метрах (1:1), как на типовом GA. "
-        f"Трюм — <b>ниже главной палубы</b>, глубина трюма (палуба → вн. дно): <b>{hold_moulded:.2f} м</b>. "
-        f"От палубы вниз до поверхности груза: <b>{depth_deck_to_cargo:.2f} м</b>. "
-        f"Вн. дно над килем: <b>{y_tt:.2f} м</b> · палуба (D): <b>{y_deck:.3f} м</b> · верх комингсов: <b>{y_coom:.2f} м</b> "
-        f"(+{h_coom:.2f} м к палубе). Секции: ~{section_length_m():.2f} м. "
+        f"<b>Выше главной палубы</b> — комингсы: <b>{h_coom_above:.2f} м</b> <b>от палубы вверх</b> до верха комингсов. "
+        f"Трюм <b>под палубой</b>, глубина (палуба → вн. дно): <b>{hold_moulded:.2f} м</b>. "
+        f"Поверхность груза <b>ниже главной палубы на {cargo_below_deck:.2f} м</b>. "
+        f"Вн. дно над килем: <b>{y_tt:.2f} м</b> · палуба (D): <b>{y_deck:.3f} м</b> · верх комингсов над килем: <b>{y_coom:.2f} м</b>. "
+        f"Секции: ~{section_length_m():.2f} м. "
         f"Насыпь от <b>внутреннего дна</b>: <b>{h_cargo:.2f} м</b>"
     )
     if clearance > 0.01:
-        sub += f" · <b>зазор до комингсов</b> (от поверхности груза): <b>{clearance:.2f} м</b>."
+        sub += f" · <b>от поверхности груза вверх</b> до верха комингсов: <b>{clearance:.2f} м</b>."
     else:
-        sub += " · зазор до комингсов: ~0 (под завал)."
+        sub += " · до верха комингсов вверх от груза: ~0 (под завал)."
     sub += f" Равномерно: <b>~{tons_per_section:.1f} т/секцию</b>."
     if capped:
         sub += (
