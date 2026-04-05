@@ -203,6 +203,14 @@ with tab_stab:
             st.session_state[k] = v
         st.session_state.last_preset_v2 = preset
 
+    # Клик по плану обрабатывается после виджетов; нельзя писать в key виджета в том же прогоне.
+    # Переносим координаты сюда, до st.number_input / st.slider с теми же key.
+    _pending = st.session_state.pop("_plan_click_pending", None)
+    if isinstance(_pending, dict):
+        for _k, _v in _pending.items():
+            if _k in ("stab_x_stores", "stab_x_coal", "stab_x_fuel_svc"):
+                st.session_state[_k] = float(_v)
+
     x_note = "**X** — от миделя (+ к носу)" if x_from_midship else "**X** — от шп. кормы вперёд"
 
     _ls_lcg_ap = float(SHIP["lightship_lcg_m"])
@@ -367,12 +375,15 @@ with tab_stab:
                 sig = (tgt, round(x_ap, 3), round(x_tbl, 3))
                 if st.session_state.get("_plan_click_sig") != sig:
                     st.session_state["_plan_click_sig"] = sig
+                    _pk = None
                     if "припасы" in tgt or "Снабжение" in tgt:
-                        st.session_state["stab_x_stores"] = x_tbl
+                        _pk = "stab_x_stores"
                     elif "Уголь" in tgt:
-                        st.session_state["stab_x_coal"] = x_tbl
+                        _pk = "stab_x_coal"
                     elif "Расходные" in tgt or "расходные" in tgt:
-                        st.session_state["stab_x_fuel_svc"] = x_tbl
+                        _pk = "stab_x_fuel_svc"
+                    if _pk is not None:
+                        st.session_state["_plan_click_pending"] = {_pk: x_tbl}
                     st.rerun()
 
     tbl_excel = trim_table_excel_with_total(
