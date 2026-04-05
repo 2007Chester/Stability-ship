@@ -37,6 +37,16 @@ from excel_ui import (
     trim_table_excel_with_total,
     x_g_to_from_ap,
 )
+from hold_diagram import build_hold_profile_figure
+from hold_layout import (
+    BEAM_M,
+    FRAME_SPACING_MAIN_M,
+    HOLD_LCG_AP_AFT_M,
+    HOLD_LCG_AP_FWD_M,
+    NUM_HOLD_SECTIONS,
+    coal_uniform_layer_height_m,
+    hold_length_m,
+)
 from ship_data import SHIP
 from sounding_tables import load_fresh_sounding_tables, table_for_fresh_tank, tons_from_sounding_mm
 from stability import (
@@ -151,8 +161,10 @@ with st.sidebar:
                 except (json.JSONDecodeError, ValueError, UnicodeDecodeError) as e:
                     st.error(f"Не удалось загрузить: {e}")
 
-# ——— две страницы ———
-tab_stab, tab_holds = st.tabs(["Остойчивость", "Груз в трюмах по осадкам"])
+# ——— вкладки ———
+tab_stab, tab_holds, tab_hold_view = st.tabs(
+    ["Остойчивость", "Груз в трюмах по осадкам", "Схема трюма (вид сбоку)"]
+)
 
 
 def _stab_preset_values(name: str) -> dict[str, float]:
@@ -727,3 +739,61 @@ with tab_holds:
         f"(топливо {m_fuel_tanks + m_fuel_svc:.1f} + пресная {m_fw:.1f} т — FRESH-P {m_fresh_p:.1f} + FRESH-S {m_fresh_s:.1f} + "
         f"балласт **{m_ballast_sum:.1f}** + порожнее/снабжение {m_other:.1f}).".replace(",", " ")
     )
+
+
+with tab_hold_view:
+    st.markdown("## Схема грузового трюма (профиль)")
+    st.caption(
+        f"Размеры судна — **LOA {SHIP['loa_m']} м**, **LBP {LBP_M} м**, **D {SHIP['depth_m']} м**, **B {BEAM_M} м** (буклет). "
+        f"Границы трюма по длине (от кормы): **{HOLD_LCG_AP_AFT_M:.0f}…{HOLD_LCG_AP_FWD_M:.0f} м** — ориентир по типовой компоновке SPB 3210; "
+        "уточните по чертежу GA при необходимости. Шаг шпангоутов на основном участке: "
+        f"**{FRAME_SPACING_MAIN_M} м** — секции на схеме **равномерные по длине трюма** ({NUM_HOLD_SECTIONS} шт.), для планирования загрузки."
+    )
+
+    t_fwd_d = float(st.session_state.get("holds_t_fwd", float(SHIP.get("draft_summer_m", 4.439))))
+    t_aft_d = float(st.session_state.get("holds_t_aft", float(SHIP.get("draft_summer_m", 4.439))))
+    m_coal_d = float(st.session_state.get("stab_m_coal", 6500.0))
+    rho_d = float(st.session_state.get("rho_holds", 0.85))
+
+    st.caption(
+        "Осадки **нос/корма** и **плотность угля** берутся с вкладок «Груз в трюмах» и «Остойчивость» (масса угля); "
+        "задайте их там — здесь только отображение."
+    )
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Осадка нос (м)", f"{t_fwd_d:.3f}")
+    c2.metric("Осадка корма (м)", f"{t_aft_d:.3f}")
+    c3.metric("Масса угля (т)", f"{m_coal_d:,.0f}".replace(",", " "))
+    c4.metric("Плотность угля (т/м³)", f"{rho_d:.2f}")
+
+    h_layer, t_per_sec, vol_m3 = coal_uniform_layer_height_m(m_coal_d, rho_d)
+    if h_layer > float(SHIP["depth_m"]) + 1e-6:
+        st.warning(
+            f"Ориентировочная высота слоя **{h_layer:.2f} м** превышает высоту борта **{SHIP['depth_m']} м** — "
+            "модель «ровный слой на всё дно» не помещается; проверьте плотность/массу или учёт пересыпи."
+        )
+
+    st.info(
+        f"**Равномерно по {NUM_HOLD_SECTIONS} секциям:** ~**{t_per_sec:.1f} т** на секцию (≈ **{m_coal_d / NUM_HOLD_SECTIONS:.2f} т** при точном делении). "
+        f"**Ровный слой угля** по площади дна трюма (длина **{hold_length_m():.1f} м** × ширина **{BEAM_M} м**): высота **≈ {min(h_layer, float(SHIP['depth_m'])):.2f} м** "
+        f"(объём груза **≈ {vol_m3:,.0f} м³**). Центр тяжести слоя над килем ~**{0.5 * min(h_layer, float(SHIP['depth_m'])):.2f}** м — для точного KG используйте вкладку «Остойчивость»."
+    )
+
+    fig_h = build_hold_profile_figure(
+        t_fwd_m=t_fwd_d,
+        t_aft_m=t_aft_d,
+        coal_mass_t=m_coal_d,
+        rho_coal_t_m3=rho_d,
+        coal_fill_height_m=min(h_layer, float(SHIP["depth_m"])),
+        tons_per_section=m_coal_d / NUM_HOLD_SECTIONS,
+    )
+    st.plotly_chart(fig_h, use_container_width=True)
+
+    with st.expander("Как читать схему"):
+        st.markdown(
+            f"""
+- **Ось X** — расстояние **от шп. кормы** вдоль киля (как LCG в буклете), **Y** — высота от киля.
+- **Корпус** — упрощённо прямоугольник по **LBP** и **D**; **ватерлиния** — прямая между осадкой у кормы и у носа (линейный дифферент).
+- **Трюм** — заштрихованная зона по длине **{HOLD_LCG_AP_AFT_M:.0f}–{HOLD_LCG_AP_FWD_M:.0f} м**; **20 секций** — равные доли длины трюма (**~{hold_length_m() / NUM_HOLD_SECTIONS:.2f} м** каждая); на схеме **1** — со стороны кормы, **20** — со стороны носа (сверьте с судовой нумерацией).
+- **Коричневый** слой — ориентир **равной высоты** угля по всему дну трюма для заданной массы и ρ; реальная поверхность насыпи может быть конусообразной.
+            """
+        )
