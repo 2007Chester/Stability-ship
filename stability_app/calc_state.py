@@ -2,10 +2,39 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
-STATE_VERSION = 4
+# Файл в каталоге приложения: автозагрузка при следующем открытии страницы
+LOCAL_STATE_FILENAME = "saved_calc_state.json"
+
+
+def local_calc_state_path() -> Path:
+    return Path(__file__).resolve().parent / LOCAL_STATE_FILENAME
+
+
+def try_load_local_calc_state(session_state: Any) -> bool:
+    """Если файл есть и валиден — записать поля в session_state. Возвращает True при успехе."""
+    p = local_calc_state_path()
+    if not p.is_file():
+        return False
+    try:
+        raw = json.loads(p.read_text(encoding="utf-8"))
+        apply_calc_state(raw, session_state)
+        return True
+    except (OSError, json.JSONDecodeError, ValueError, TypeError):
+        return False
+
+
+def save_local_calc_state(session_state: Any) -> None:
+    """Сохранить текущий расчёт на диск (тот же формат, что и «Скачать .json»)."""
+    p = local_calc_state_path()
+    payload = export_calc_state(session_state)
+    p.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+STATE_VERSION = 5
 APP_ID = "raid8-stability"
 
 # Ключи session_state, которые участвуют в сохранении (сайдбар — явные key в app.py)
@@ -52,6 +81,7 @@ HOLDS_KEYS = (
     "holds_fore",
     "holds_bw02_p",
     "holds_bw02_s",
+    "holds_m_other",
     "rho_holds",
 )
 

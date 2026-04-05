@@ -13,7 +13,13 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from calc_state import apply_calc_state, export_calc_state
+from calc_state import (
+    apply_calc_state,
+    export_calc_state,
+    local_calc_state_path,
+    save_local_calc_state,
+    try_load_local_calc_state,
+)
 
 import numpy as np
 import pandas as pd
@@ -66,11 +72,22 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
+# Один раз за сессию браузера: подставить параметры из файла (после F5 — новая сессия, снова загрузка).
+if "_raid8_calc_bootstrapped" not in st.session_state:
+    st.session_state._raid8_calc_bootstrapped = True
+    if try_load_local_calc_state(st.session_state):
+        st.session_state._raid8_show_loaded_banner = True
+        # Иначе блок шаблона на вкладке «Остойчивость» перезапишет поля пресетом
+        if "preset_v2" in st.session_state:
+            st.session_state.last_preset_v2 = st.session_state["preset_v2"]
+
 st.markdown("# РЕЙД-8")
 st.caption("Остойчивость по буклету · оценка насыпного груза в трюмах по осадкам")
 
 # ——— боковая панель ———
 with st.sidebar:
+    if st.session_state.pop("_raid8_show_loaded_banner", False):
+        st.success("Загружен сохранённый расчёт (файл на диске).")
     st.markdown(f"### {SHIP['name']}")
     st.caption(
         f"L ≈ {SHIP['loa_m']} м · B = {SHIP['beam_m']} м · D = {SHIP['depth_m']} м · "
@@ -98,7 +115,19 @@ with st.sidebar:
     )
 
     with st.expander("Сохранение расчёта", expanded=False):
-        st.caption("Скачайте JSON со всеми полями или загрузите ранее сохранённый файл.")
+        st.caption(
+            f"**Сохранить** — записать в `{local_calc_state_path().name}` в папке приложения; "
+            "при следующем открытии страницы параметры подставятся сами. "
+            "Либо скачайте JSON или загрузите файл вручную."
+        )
+        if st.button("Сохранить для автозагрузки", use_container_width=True, type="primary"):
+            try:
+                save_local_calc_state(st.session_state)
+                st.success(
+                    f"Готово. Файл: `{local_calc_state_path().name}` — при следующей загрузке страницы расчёт восстановится."
+                )
+            except OSError as e:
+                st.error(f"Не удалось записать файл: {e}")
         payload = export_calc_state(st.session_state)
         ts = datetime.now().strftime("%Y%m%d-%H%M%S")
         fname = f"raid8-raschet-{ts}.json"
@@ -631,16 +660,27 @@ with tab_holds:
 
     m_light = float(SHIP["lightship_mass_t"])
     m_stores = float(st.session_state.get("stab_m_stores", 0.0))
-    m_other = m_light + m_stores
-    st.markdown("##### Порожнее и снабжение (фиксировано по буклету и вкладке «Остойчивость»)")
+    ref_other = m_light + m_stores
+    if "holds_m_other" not in st.session_state:
+        st.session_state.holds_m_other = float(ref_other)
+
+    st.markdown("##### Порожнее и снабжение")
     st.caption(
-        "Сумма **массы порожнего судна** из буклета и **судового снабжения** с первой вкладки — без насыпного груза в трюмах и без топлива/пресной/балласта ниже."
+        f"Ориентир: **порожнее буклета** {m_light:,.2f} т + **снабжение** с вкладки «Остойчивость» {m_stores:,.2f} т → **{ref_other:,.2f}** т. "
+        "Поле ниже можно править вручную; кнопка подставляет этот ориентир заново."
     )
-    st.metric(
-        "Порожнее + снабжение, т",
-        f"{m_other:,.2f}".replace(",", " "),
-        help=f"Порожнее {m_light:,.2f} т + снабжение {m_stores:,.2f} т (поле «Судовое снабжение» на вкладке «Остойчивость»).".replace(",", " "),
+    m_other = float(
+        st.number_input(
+            "Порожнее + снабжение, т",
+            min_value=0.0,
+            step=1.0,
+            key="holds_m_other",
+            help="Масса без насыпного груза в трюмах (корпус порожний, снабжение и т.д.), без топлива/пресной/балласта выше.",
+        )
     )
+    if st.button("Подставить с «Остойчивость»", key="holds_sync_other"):
+        st.session_state.holds_m_other = float(ref_other)
+        st.rerun()
 
     m_wo_hold = (
         float(m_fuel_tanks)
