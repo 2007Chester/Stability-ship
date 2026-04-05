@@ -128,7 +128,12 @@ def style_trim_excel(df: pd.DataFrame) -> pd.io.formats.style.Styler:
 
     def _total_row(_row: pd.Series) -> list[str]:
         if str(_row.get(COL_NAME, "")).strip() == "ИТОГО:":
-            return ["background-color: #E2EFDA; font-weight: bold"] * len(_row)
+            # Заметный фон и тёмный текст — иначе строка теряется на светлой теме Streamlit
+            cell = (
+                "background-color: #B4C6E7; color: #111; font-weight: 700; "
+                "border-top: 2px solid #4472C4; border-bottom: 2px solid #4472C4;"
+            )
+            return [cell] * len(_row)
         return [""] * len(_row)
 
     sty = sty.apply(_total_row, axis=1)
