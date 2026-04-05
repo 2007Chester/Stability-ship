@@ -22,7 +22,7 @@ import streamlit as st
 from streamlit_plotly_events import plotly_events
 
 from cargo_excel_data import PRESET_V2_GRUZ
-from tank_booklet import BOOKLET_TANKS, booklet_default_lcg_kg, x_table_from_lcg_ap
+from tank_booklet import BOOKLET_TANKS, x_table_from_lcg_ap
 from excel_ui import (
     COL_KG,
     COL_MASS,
@@ -46,6 +46,15 @@ from stability import (
 )
 
 LBP_M = float(SHIP.get("lbp_m", 96.78))
+
+
+def _booklet_default_lcg_kg() -> tuple[list[float], list[float]]:
+    """LCG и KG по BOOKLET_TANKS (разд. 6 буклета). Считается здесь, а не импортом из tank_booklet — чтобы деплой не ломался при рассинхроне файлов."""
+
+    lcgs = [float(t[1]) for t in BOOKLET_TANKS]
+    kgs = [float(t[2]) for t in BOOKLET_TANKS]
+    return lcgs, kgs
+
 
 # Ориентир макс. массы при 100% (буклет, разд. 6) — только для подсказок «?»
 M_MAX_BW01 = 221.76
@@ -131,7 +140,7 @@ tab_stab, tab_holds = st.tabs(["Остойчивость", "Груз в трюм
 
 def _tank_geometry_preset_state() -> dict[str, float | bool]:
     """LCG/KG по буклету (разд. 6) и выключенный режим своих координат."""
-    lcgs, kgs = booklet_default_lcg_kg()
+    lcgs, kgs = _booklet_default_lcg_kg()
     d: dict[str, float | bool] = {"stab_use_custom_tank_geometry": False}
     for i in range(9):
         d[f"stab_tank_lcg_{i}"] = lcgs[i]

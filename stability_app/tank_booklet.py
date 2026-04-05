@@ -19,13 +19,6 @@ BOOKLET_TANKS: list[tuple[str, float, float, float]] = [
 ]
 
 
-def booklet_default_lcg_kg() -> tuple[list[float], list[float]]:
-    """LCG от шп. кормы (м) и KG (м) из буклета по порядку stab_t0…stab_t8."""
-    lcgs = [float(t[1]) for t in BOOKLET_TANKS]
-    kgs = [float(t[2]) for t in BOOKLET_TANKS]
-    return lcgs, kgs
-
-
 def x_table_from_lcg_ap(lcg_ap_m: float, lbp_m: float, *, x_from_midship: bool) -> float:
     """X для таблицы: от миделя (+к носу) или от кормы — как в excel_ui."""
     if x_from_midship:
