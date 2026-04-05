@@ -6,10 +6,14 @@
 
 from __future__ import annotations
 
+import json
 import sys
+from datetime import datetime
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from calc_state import apply_calc_state, export_calc_state
 
 import numpy as np
 import pandas as pd
@@ -71,15 +75,50 @@ with st.sidebar:
         f"ρ = {SHIP['rho_sea_t_m3']} т/м³"
     )
     st.divider()
-    theta_flood = st.slider("Угол заливания θзал, °", 5.0, 90.0, 55.0, 1.0)
-    fsc = st.number_input("ПВСВ (потеря GM), м", 0.0, 5.0, 0.0, 0.01)
-    gg0 = st.number_input("GG₀ (лед и т.п.), м", 0.0, 3.0, 0.0, 0.001)
-    lcf_ap_m = st.number_input("LCF от кормы, м", 0.0, float(LBP_M), float(LBP_M) / 2.0, 0.1)
+    theta_flood = st.slider(
+        "Угол заливания θзал, °", 5.0, 90.0, 55.0, 1.0, key="sb_theta_flood"
+    )
+    fsc = st.number_input("ПВСВ (потеря GM), м", 0.0, 5.0, 0.0, 0.01, key="sb_fsc")
+    gg0 = st.number_input("GG₀ (лед и т.п.), м", 0.0, 3.0, 0.0, 0.001, key="sb_gg0")
+    lcf_ap_m = st.number_input(
+        "LCF от кормы, м",
+        0.0,
+        float(LBP_M),
+        float(LBP_M) / 2.0,
+        0.1,
+        key="sb_lcf_ap_m",
+    )
     x_from_midship = st.toggle(
         "Xг в таблице от миделя (+ к носу)",
         value=True,
         help="Как в Trim Excel: LCG считается через LBP/2 + X.",
+        key="sb_x_from_midship",
     )
+
+    with st.expander("Сохранение расчёта", expanded=False):
+        st.caption("Скачайте JSON со всеми полями или загрузите ранее сохранённый файл.")
+        payload = export_calc_state(st.session_state)
+        ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+        fname = f"raid8-raschet-{ts}.json"
+        st.download_button(
+            label="Скачать расчёт (.json)",
+            data=json.dumps(payload, ensure_ascii=False, indent=2),
+            file_name=fname,
+            mime="application/json",
+            use_container_width=True,
+        )
+        up = st.file_uploader("Файл для загрузки", type=["json"], key="calc_state_upload")
+        if st.button("Загрузить расчёт в форму", use_container_width=True):
+            if up is None:
+                st.warning("Выберите файл .json.")
+            else:
+                try:
+                    data = json.loads(up.getvalue().decode("utf-8"))
+                    apply_calc_state(data, st.session_state)
+                    st.success("Параметры загружены.")
+                    st.rerun()
+                except (json.JSONDecodeError, ValueError, UnicodeDecodeError) as e:
+                    st.error(f"Не удалось загрузить: {e}")
 
 # ——— две страницы ———
 tab_stab, tab_holds = st.tabs(["Остойчивость", "Груз в трюмах по осадкам"])
@@ -88,9 +127,6 @@ def _stab_preset_values(name: str) -> dict[str, float]:
     """Начальные значения полей вкладки остойчивости по шаблону."""
     if name == "В грузу (из Excel)":
         return {
-            "stab_m_light": 2210.0,
-            "stab_x_light": 4.133,
-            "stab_kg_light": 4.58,
             "stab_m_stores": 15.0,
             "stab_x_stores": -46.0,
             "stab_kg_stores": 7.2,
@@ -112,9 +148,6 @@ def _stab_preset_values(name: str) -> dict[str, float]:
         }
     if name == "Пустая строка":
         return {
-            "stab_m_light": 1000.0,
-            "stab_x_light": 0.0,
-            "stab_kg_light": 4.5,
             "stab_m_stores": 0.0,
             "stab_x_stores": 0.0,
             "stab_kg_stores": 4.5,
@@ -128,9 +161,6 @@ def _stab_preset_values(name: str) -> dict[str, float]:
         }
     # Без груза (балласт)
     return {
-        "stab_m_light": 2210.0,
-        "stab_x_light": 4.133,
-        "stab_kg_light": 4.58,
         "stab_m_stores": 9.0,
         "stab_x_stores": -46.0,
         "stab_kg_stores": 7.2,
@@ -155,7 +185,7 @@ def _stab_preset_values(name: str) -> dict[str, float]:
 with tab_stab:
     st.markdown("## Расчёт остойчивости")
     st.caption(
-        "Массы **по цистернам буклета** (LCG/KG танков из разд. 6) + порожнее, снабжение, расходные, **уголь**. "
+        "Массы **по цистернам буклета** (LCG/KG танков из разд. 6) + **порожнее из буклета** (фикс.), снабжение, расходные, **уголь**. "
         "Сумма масс → Δ и осадка; ниже — **GM**, **ИМО A.749**, диаграмма **GZ**."
     )
 
@@ -172,18 +202,20 @@ with tab_stab:
 
     x_note = "**X** — от миделя (+ к носу)" if x_from_midship else "**X** — от шп. кормы вперёд"
 
+    _ls_lcg_ap = float(SHIP["lightship_lcg_m"])
+    m_light = float(SHIP["lightship_mass_t"])
+    kg_light = float(SHIP["lightship_vcg_m"])
+    x_light = x_table_from_lcg_ap(_ls_lcg_ap, LBP_M, x_from_midship=x_from_midship)
+
     with st.container(border=True):
         st.markdown("##### Порожнее судно и снабжение")
-        st.caption(x_note)
-        c1, c2 = st.columns(2)
-        with c1:
-            m_light = st.number_input("Судно порожнее, т", 0.0, 50000.0, key="stab_m_light", step=10.0)
-            x_light = st.number_input("X порожнего, м", -200.0, 200.0, key="stab_x_light", step=0.01)
-            kg_light = st.number_input("KG порожнего, м", 0.0, 30.0, key="stab_kg_light", step=0.01)
-        with c2:
-            m_stores = st.number_input("Судовое снабжение, т", 0.0, 5000.0, key="stab_m_stores", step=1.0)
-            x_stores = st.number_input("X снабжения, м", -200.0, 200.0, key="stab_x_stores", step=0.01)
-            kg_stores = st.number_input("KG снабжения, м", 0.0, 30.0, key="stab_kg_stores", step=0.01)
+        st.caption(
+            f"{x_note} · Порожнее судно **из буклета** (постоянно): **{m_light:,.2f}** т, "
+            f"LCG от кормы **{_ls_lcg_ap:.3f}** м → X в таблице **{x_light:.3f}** м, KG **{kg_light:.3f}** м."
+        )
+        m_stores = st.number_input("Судовое снабжение, т", 0.0, 5000.0, key="stab_m_stores", step=1.0)
+        x_stores = st.number_input("X снабжения, м", -200.0, 200.0, key="stab_x_stores", step=0.01)
+        kg_stores = st.number_input("KG снабжения, м", 0.0, 30.0, key="stab_kg_stores", step=0.01)
 
     with st.container(border=True):
         st.markdown("##### Топливо и пресная вода (LCG/KG из буклета)")
