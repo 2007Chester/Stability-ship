@@ -22,6 +22,15 @@ from ship_data import (
 G = 9.81
 
 
+def trapz_compat(y: Sequence[float], x: Sequence[float]) -> float:
+    """Интеграл методом трапеций по 1D. NumPy 2.0+ удалил np.trapz — используем trapezoid."""
+    ya = np.asarray(y, dtype=float)
+    xa = np.asarray(x, dtype=float)
+    if hasattr(np, "trapezoid"):
+        return float(np.trapezoid(ya, xa))
+    return float(np.trapz(ya, xa))
+
+
 def _interp(x: Sequence[float], y: Sequence[float], xi: float) -> float:
     return float(np.interp(xi, np.asarray(x, float), np.asarray(y, float)))
 
@@ -175,8 +184,7 @@ def integrate_gz_m_rad(phi_deg: Sequence[float], gz_m: Sequence[float], a_deg: f
     phs = ph[sl]
     gzs = gz[sl]
     xr = np.radians(phs)
-    _trap = getattr(np, "trapezoid", np.trapz)
-    return float(_trap(gzs, xr))
+    return trapz_compat(gzs, xr)
 
 
 def build_fine_gz(

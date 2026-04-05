@@ -11,7 +11,7 @@ from typing import Callable
 
 import numpy as np
 
-from stability import gz0_at
+from stability import gz0_at, trapz_compat
 
 G0 = 9.80665
 
@@ -196,7 +196,7 @@ def weather_energy_areas(
         g = gz_signed(delta_t, kg0_m, float(p))
         integr_a.append(max(lw2 - g, 0.0))
         rad_a.append(math.radians(float(p)))
-    area_a = float(np.trapz(integr_a, rad_a))
+    area_a = trapz_compat(integr_a, rad_a)
 
     phis_b = np.arange(theta0, theta2 + 1e-9, step_deg)
     if len(phis_b) < 2:
@@ -207,7 +207,7 @@ def weather_energy_areas(
         g = gz_at(delta_t, kg0_m, float(p))
         integr_b.append(max(g - lw2, 0.0))
         rad_b.append(math.radians(float(p)))
-    area_b = float(np.trapz(integr_b, rad_b))
+    area_b = trapz_compat(integr_b, rad_b)
 
     ratio = area_b / area_a if area_a > 1e-9 else float("inf")
     return WeatherEnergyResult(
