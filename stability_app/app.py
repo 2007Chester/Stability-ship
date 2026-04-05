@@ -39,6 +39,21 @@ from stability import (
 
 LBP_M = float(SHIP.get("lbp_m", 96.78))
 
+# Массы при 100% (буклет, разд. 6) — для пересчёта уровня см → т
+M_MAX_BW01 = 221.76
+M_MAX_BW02 = 212.31
+M_MAX_FORE = 101.62
+M_MAX_FW_SIDE = 110.29
+
+
+def mass_from_level_cm(cm: float, m_at_100: float, h_cm_full: float) -> float:
+    """Линейно: масса = (уровень см / высота 100%) × масса при 100%, не больше m_at_100."""
+    if h_cm_full <= 0 or m_at_100 <= 0:
+        return 0.0
+    r = max(0.0, float(cm)) / float(h_cm_full)
+    return float(min(m_at_100, r * m_at_100))
+
+
 st.set_page_config(
     page_title="Остойчивость — РЕЙД-8",
     layout="wide",
@@ -276,9 +291,30 @@ with tab_stab:
 with tab_holds:
     st.markdown("## Груз в трюмах по осадкам")
     st.caption(
-        "Введите **измеренные осадки**, массы **топлива**, **пресной воды**, **балласта** и всё **прочее** без насыпного груза в трюмах — "
-        "получите оценку **массы погруженного груза в трюмах**."
+        "Введите **измеренные осадки**, **топливо (т)**, **балласт и пресную воду** — в **тоннах** или **уровне в сантиметрах**, "
+        "и **прочее** без насыпного груза в трюмах — получите оценку **массы погруженного груза в трюмах**."
     )
+
+    unit_bw_fw = st.radio(
+        "Балласт и пресная вода: единица ввода",
+        ["Тонны (т)", "Уровень (см)"],
+        horizontal=True,
+        key="holds_unit_bw_fw",
+        help="В тоннах — фактическая масса в цистерне. В сантиметрах — уровень заливки; пересчёт в тонны линейно по массе при 100% из буклета и заданной высоте «100%».",
+    )
+    use_tons_bw_fw = unit_bw_fw.startswith("Тонны")
+    if not use_tons_bw_fw:
+        h_cm_full = st.number_input(
+            "Высота уровня при 100% заполнения (для пересчёта см → т), см",
+            min_value=1.0,
+            max_value=2000.0,
+            value=100.0,
+            step=1.0,
+            key="holds_h_cm_full",
+            help="Одна ориентировочная высота для всех балластных и пресноводных цистерн; подстройте под таблицы судна. Масса = (уровень см / эта высота) × масса при 100%.",
+        )
+    else:
+        h_cm_full = 100.0
 
     col_d, col_f = st.columns(2)
     with col_d:
@@ -304,36 +340,149 @@ with tab_holds:
             )
     with col_f:
         with st.container(border=True):
-            st.markdown("##### Топливо и вода, т")
+            st.markdown("##### Топливо (всегда в тоннах)")
             m_fuel_tanks = st.number_input(
-                "Топливо в танках",
+                "Топливо в танках, т",
                 min_value=0.0,
                 value=6.0,
                 step=0.5,
                 key="holds_fuel_tanks",
             )
             m_fuel_svc = st.number_input(
-                "Топливо в расходных цистернах",
+                "Топливо в расходных цистернах, т",
                 min_value=0.0,
                 value=0.0,
                 step=0.5,
                 key="holds_fuel_svc",
             )
-            m_fw = st.number_input(
-                "Пресная вода в танках",
-                min_value=0.0,
-                value=0.0,
-                step=0.5,
-                key="holds_fw",
-            )
+            st.markdown("##### Пресная вода (буклет: FRESH-PTS / FRESH-STB)")
+            _suf_fw = ", т" if use_tons_bw_fw else ", см"
+            _step_fw = 0.5 if use_tons_bw_fw else 1.0
+            if use_tons_bw_fw:
+                v_fwp = st.number_input(
+                    f"FRESH-PTS.P (лев){_suf_fw}",
+                    min_value=0.0,
+                    value=0.0,
+                    step=_step_fw,
+                    help=f"Макс. ≈ {M_MAX_FW_SIDE:.2f} т",
+                    key="holds_fresh_p_t",
+                )
+                v_fws = st.number_input(
+                    f"FRESH-STB.S (прав){_suf_fw}",
+                    min_value=0.0,
+                    value=0.0,
+                    step=_step_fw,
+                    help=f"Макс. ≈ {M_MAX_FW_SIDE:.2f} т",
+                    key="holds_fresh_s_t",
+                )
+                m_fresh_p = float(v_fwp)
+                m_fresh_s = float(v_fws)
+            else:
+                v_fwp = st.number_input(
+                    f"FRESH-PTS.P (лев){_suf_fw}",
+                    min_value=0.0,
+                    value=0.0,
+                    step=_step_fw,
+                    help=f"Макс. уровня при 100% → ~{M_MAX_FW_SIDE:.2f} т",
+                    key="holds_fresh_p_cm",
+                )
+                v_fws = st.number_input(
+                    f"FRESH-STB.S (прав){_suf_fw}",
+                    min_value=0.0,
+                    value=0.0,
+                    step=_step_fw,
+                    key="holds_fresh_s_cm",
+                )
+                m_fresh_p = mass_from_level_cm(float(v_fwp), M_MAX_FW_SIDE, float(h_cm_full))
+                m_fresh_s = mass_from_level_cm(float(v_fws), M_MAX_FW_SIDE, float(h_cm_full))
+            m_fw = m_fresh_p + m_fresh_s
 
     with st.container(border=True):
-        st.markdown("##### Балласт, т")
-        b1, b2 = st.columns(2)
-        with b1:
-            m_ball_ps = st.number_input("Левый борт", min_value=0.0, value=0.0, step=1.0, key="holds_ball_ps")
-        with b2:
-            m_ball_sb = st.number_input("Правый борт", min_value=0.0, value=0.0, step=1.0, key="holds_ball_sb")
+        _ub = ", т" if use_tons_bw_fw else ", см"
+        _sb = 1.0 if use_tons_bw_fw else 1.0
+        st.markdown(f"##### Балластная вода по цистернам (разд. 6 буклета){_ub}")
+        st.caption(
+            "Пять цистерн: нос **BW-01** лев/прав, корма **BW-02** лев/прав, **носовой пик**. "
+            "Макс. при 100%: см. подсказки «?». При вводе в см масса считается от высоты 100% (поле выше)."
+        )
+        ba1, ba2, ba3 = st.columns(3)
+
+        def _ballast_val(
+            key_t: str,
+            key_cm: str,
+            m_max: float,
+            label: str,
+            help_t: str,
+        ) -> float:
+            if use_tons_bw_fw:
+                return float(
+                    st.number_input(
+                        label + _ub,
+                        min_value=0.0,
+                        value=0.0,
+                        step=_sb,
+                        help=help_t,
+                        key=key_t,
+                    )
+                )
+            return mass_from_level_cm(
+                float(
+                    st.number_input(
+                        label + _ub,
+                        min_value=0.0,
+                        value=0.0,
+                        step=1.0,
+                        help=f"При 100% уровня → ~{m_max:.2f} т",
+                        key=key_cm,
+                    )
+                ),
+                m_max,
+                float(h_cm_full),
+            )
+
+        with ba1:
+            m_bw01_p = _ballast_val(
+                "holds_bw01_p_t",
+                "holds_bw01_p_cm",
+                M_MAX_BW01,
+                "BW-01 PTS-FWD.P (нос, лев)",
+                f"Макс. ≈ {M_MAX_BW01:.2f} т",
+            )
+        with ba2:
+            m_bw01_s = _ballast_val(
+                "holds_bw01_s_t",
+                "holds_bw01_s_cm",
+                M_MAX_BW01,
+                "BW-01 STB-FWD.S (нос, прав)",
+                f"Макс. ≈ {M_MAX_BW01:.2f} т",
+            )
+        with ba3:
+            m_fore = _ballast_val(
+                "holds_fore_t",
+                "holds_fore_cm",
+                M_MAX_FORE,
+                "FORE PEAK SW.C (носовой пик)",
+                f"Макс. ≈ {M_MAX_FORE:.2f} т",
+            )
+        ba4, ba5, _ = st.columns([1, 1, 1])
+        with ba4:
+            m_bw02_p = _ballast_val(
+                "holds_bw02_p_t",
+                "holds_bw02_p_cm",
+                M_MAX_BW02,
+                "BW-02 PTS-AFT.P (корма, лев)",
+                f"Макс. ≈ {M_MAX_BW02:.2f} т",
+            )
+        with ba5:
+            m_bw02_s = _ballast_val(
+                "holds_bw02_s_t",
+                "holds_bw02_s_cm",
+                M_MAX_BW02,
+                "BW-02 STB-AFT.S (корма, прав)",
+                f"Макс. ≈ {M_MAX_BW02:.2f} т",
+            )
+
+    m_ballast_sum = m_bw01_p + m_bw01_s + m_fore + m_bw02_p + m_bw02_s
 
     m_other = st.number_input(
         "Прочее без груза в трюмах (корпус порожний, снабжение, экипаж и т.д.), т",
@@ -348,8 +497,7 @@ with tab_holds:
         float(m_fuel_tanks)
         + float(m_fuel_svc)
         + float(m_fw)
-        + float(m_ball_ps)
-        + float(m_ball_sb)
+        + m_ballast_sum
         + float(m_other)
     )
     delta_h, t_mean_h, cargo_h = cargo_mass_from_drafts(t_fwd, t_aft, m_wo_hold)
@@ -379,7 +527,8 @@ with tab_holds:
         st.markdown(
             f"""
 - **T_ср** = (T_нос + T_корма) / 2 → по гидростатике буклета **Δ** (т).
-- **M_груз_трюмы** = Δ − (топливо + пресная вода + балласт + прочее).
+- **M_груз_трюмы** = Δ − (топливо + пресная вода + **сумма пяти балластных цистерн** + прочее).
+- При вводе **в см**: масса в каждой цистерне = (уровень / высота 100%) × масса при 100% из буклета (не больше неё).
 - Кривые **GZ** в буклете для **дифферента 0**; при большом дифференте оценка **приближённая**.
 - Глубина по маркировке: **{SHIP["depth_m"]}** м.
             """
@@ -387,7 +536,6 @@ with tab_holds:
 
     st.caption(
         f"Без трюмного груза учтено: **{m_wo_hold:,.1f}** т "
-        f"(топливо {m_fuel_tanks + m_fuel_svc:.1f} + вода {m_fw:.1f} + балласт {m_ball_ps + m_ball_sb:.1f} + прочее {m_other:.1f}).".replace(
-            ",", " "
-        )
+        f"(топливо {m_fuel_tanks + m_fuel_svc:.1f} + пресная {m_fw:.1f} т — FRESH-P {m_fresh_p:.1f} + FRESH-S {m_fresh_s:.1f} + "
+        f"балласт **{m_ballast_sum:.1f}** + прочее {m_other:.1f}).".replace(",", " ")
     )
