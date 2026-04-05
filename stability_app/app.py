@@ -37,7 +37,6 @@ from excel_ui import (
     trim_table_excel_with_total,
     x_g_to_from_ap,
 )
-from hold_diagram import build_hold_profile_figure
 from hold_layout import (
     BEAM_M,
     COAMING_HEIGHT_ABOVE_DECK_M,
@@ -50,6 +49,7 @@ from hold_layout import (
     hold_length_m,
     hold_stowage_height_limit_m,
 )
+from hold_diagram import build_hold_profile_figure
 from ship_data import SHIP
 from sounding_tables import load_fresh_sounding_tables, table_for_fresh_tank, tons_from_sounding_mm
 from stability import (

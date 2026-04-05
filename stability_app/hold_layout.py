@@ -9,6 +9,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from ship_data import SHIP
 
 LOA_M = float(SHIP["loa_m"])
@@ -74,7 +76,7 @@ def hold_stowage_height_limit_m() -> float:
     return max(0.0, coaming_top_above_keel_m() - float(INNER_BOTTOM_ABOVE_KEEL_M))
 
 
-def coal_uniform_stowage_m(mass_t: float, rho_t_m3: float) -> dict[str, float | bool]:
+def coal_uniform_stowage_m(mass_t: float, rho_t_m3: float) -> dict[str, Any]:
     """
     Ровный слой угля по площади трюма L×B от **внутреннего дна**; верх — не выше комингсов.
 
