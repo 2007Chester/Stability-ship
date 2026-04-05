@@ -213,7 +213,6 @@ class CriterionResult:
 
 def imo749_intact(
     delta_t: float,
-    vcg_m: float,
     kg_m: float,
     fsc_m: float,
     theta_flood_deg: float,
@@ -225,9 +224,15 @@ def imo749_intact(
     3. GZ₃₀ ≥ 0,20 м
     4. Угол макс. GZ ≥ 15°
     5. GM ≥ 0,15 м
+
+    Кривая GZ: GZ(φ) = GZ₀(Δ,φ) − (KG + FSC)·sin φ, где **KG** — аппликата центра масс над килем,
+    **FSC** — потеря GM от ПВСВ (м). Так наклон кривой в начале согласован с
+    **GM = KMT − KG − FSC** и касательной GM·φ (φ в рад) на диаграмме.
+    Без этого при FSC > 0 кривая и касательная расходились бы в нуле.
     """
     gm = gm_metacentric(delta_t, kg_m, fsc_m)
-    phis, gzs = build_fine_gz(delta_t, vcg_m, 0.5)
+    vcg_gz = kg_m + fsc_m
+    phis, gzs = build_fine_gz(delta_t, vcg_gz, 0.5)
     phis_list = [float(x) for x in phis]
     gzs_list = [float(x) for x in gzs]
 

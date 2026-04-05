@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-STATE_VERSION = 3
+STATE_VERSION = 4
 APP_ID = "raid8-stability"
 
 # Ключи session_state, которые участвуют в сохранении (сайдбар — явные key в app.py)
@@ -52,7 +52,6 @@ HOLDS_KEYS = (
     "holds_fore",
     "holds_bw02_p",
     "holds_bw02_s",
-    "holds_m_other",
     "rho_holds",
 )
 

@@ -125,7 +125,7 @@ class TestGzChartMatchesFormula(unittest.TestCase):
     def test_imo749_meta_matches_build_fine_gz(self):
         delta = 8000.0
         kg0 = 5.5
-        _, meta = imo749_intact(delta, kg0, kg0, 0.0, 55.0)
+        _, meta = imo749_intact(delta, kg0, 0.0, 55.0)
         phis_b, gzs_b = build_fine_gz(delta, kg0, 0.5)
         self.assertTrue(
             np.allclose(np.asarray(meta["phis_deg"], float), np.asarray(phis_b, float))
@@ -135,7 +135,7 @@ class TestGzChartMatchesFormula(unittest.TestCase):
 
 class TestImo749(unittest.TestCase):
     def test_runs_without_nan(self):
-        crit, meta = imo749_intact(8000.0, 5.5, 5.5, 0.0, 55.0)
+        crit, meta = imo749_intact(8000.0, 5.5, 0.0, 55.0)
         self.assertEqual(len(crit), 5)
         self.assertFalse(math.isnan(meta["a_0_15"]))
         self.assertGreater(meta["a_0_15"], 0.0)

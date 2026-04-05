@@ -56,7 +56,7 @@ class TestCargoInGruzPreset(unittest.TestCase):
         kg0 = kg
         t_mean = draft_from_displacement(delta)
         gm = gm_metacentric(delta, kg0, 0.0)
-        crit, meta = imo749_intact(delta, kg0, kg0, 0.0, 55.0)
+        crit, meta = imo749_intact(delta, kg0, 0.0, 55.0)
 
         self.assertAlmostEqual(delta, 8867.0, places=3)
         self.assertAlmostEqual(kg, 5.643780, places=4)
