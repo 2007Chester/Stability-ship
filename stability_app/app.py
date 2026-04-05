@@ -22,7 +22,7 @@ import streamlit as st
 from streamlit_plotly_events import plotly_events
 
 from cargo_excel_data import PRESET_V2_GRUZ
-from tank_booklet import BOOKLET_TANKS, x_table_from_lcg_ap
+from tank_booklet import BOOKLET_TANKS, booklet_default_lcg_kg, x_table_from_lcg_ap
 from excel_ui import (
     COL_KG,
     COL_MASS,
@@ -35,6 +35,7 @@ from excel_ui import (
 )
 from ship_data import SHIP
 from ship_diagram import load_plan_figure
+from sounding_tables import load_fresh_sounding_tables, table_for_fresh_tank, tons_from_sounding_mm
 from stability import (
     cargo_mass_from_drafts,
     draft_from_displacement,
@@ -127,10 +128,22 @@ with st.sidebar:
 # ——— две страницы ———
 tab_stab, tab_holds = st.tabs(["Остойчивость", "Груз в трюмах по осадкам"])
 
-def _stab_preset_values(name: str) -> dict[str, float]:
+
+def _tank_geometry_preset_state() -> dict[str, float | bool]:
+    """LCG/KG по буклету (разд. 6) и выключенный режим своих координат."""
+    lcgs, kgs = booklet_default_lcg_kg()
+    d: dict[str, float | bool] = {"stab_use_custom_tank_geometry": False}
+    for i in range(9):
+        d[f"stab_tank_lcg_{i}"] = lcgs[i]
+        d[f"stab_tank_kg_{i}"] = kgs[i]
+    return d
+
+
+def _stab_preset_values(name: str) -> dict[str, float | bool]:
     """Начальные значения полей вкладки остойчивости по шаблону."""
+    geom = _tank_geometry_preset_state()
     if name == "В грузу (из Excel)":
-        return dict(PRESET_V2_GRUZ)
+        return {**dict(PRESET_V2_GRUZ), **geom}
     if name == "Пустая строка":
         return {
             "stab_m_stores": 0.0,
@@ -143,6 +156,7 @@ def _stab_preset_values(name: str) -> dict[str, float]:
             "stab_m_coal": 0.0,
             "stab_x_coal": 0.0,
             "stab_kg_coal": 4.5,
+            **geom,
         }
     # Без груза (балласт)
     return {
@@ -164,13 +178,14 @@ def _stab_preset_values(name: str) -> dict[str, float]:
         "stab_m_coal": 0.0,
         "stab_x_coal": 0.0,
         "stab_kg_coal": 4.5,
+        **geom,
     }
 
 
 with tab_stab:
     st.markdown("## Расчёт остойчивости")
     st.caption(
-        "Массы **по цистернам буклета** (LCG/KG танков из разд. 6) + **порожнее из буклета** (фикс.), снабжение, расходные, **уголь**. "
+        "Массы **по цистернам буклета** (по умолчанию LCG/KG из разд. 6; можно задать свои — см. блок «Положение цистерн») + **порожнее из буклета** (фикс.), снабжение, расходные, **уголь**. "
         "Сумма масс → Δ и осадка; ниже — **GM**, **ИМО A.749**, диаграмма **GZ**."
     )
 
@@ -192,6 +207,13 @@ with tab_stab:
         for _k, _v in _pending.items():
             if _k in ("stab_x_stores", "stab_x_coal", "stab_x_fuel_svc"):
                 st.session_state[_k] = float(_v)
+
+    _pf = st.session_state.pop("_pending_fresh_mass", None)
+    if isinstance(_pf, dict):
+        if "stab_t2" in _pf:
+            st.session_state["stab_t2"] = float(_pf["stab_t2"])
+        if "stab_t3" in _pf:
+            st.session_state["stab_t3"] = float(_pf["stab_t3"])
 
     x_note = "**X** — от миделя (+ к носу)" if x_from_midship else "**X** — от шп. кормы вперёд"
 
@@ -216,6 +238,10 @@ with tab_stab:
         tf1, tf2 = st.columns(2)
         with tf1:
             st.markdown("**Дизельное топливо**")
+            st.caption(
+                "Центры тяжести жидкости в таблице — **KG при полной вместимости** из буклета; "
+                "при частичном заполнении реальный **KG** ниже — при необходимости включите свои LCG/KG ниже."
+            )
             m_t0 = st.number_input(
                 BOOKLET_TANKS[0][0].replace(" (топливо, лев)", ""),
                 0.0,
@@ -237,6 +263,35 @@ with tab_stab:
             kg_fuel_svc = st.number_input("KG расходных, м", 0.0, 15.0, key="stab_kg_fuel_svc", step=0.01)
         with tf2:
             st.markdown("**Пресная вода**")
+            _ftbl = load_fresh_sounding_tables()
+            _has_snd = bool(_ftbl.get("FRESH")) or bool(_ftbl.get("FRESH-PTS.P")) or bool(_ftbl.get("FRESH-STB.S"))
+            with st.expander("Замер глубины (sounding) → тонны", expanded=False):
+                st.caption(
+                    "Таблица **мм → т** из GHS/буклета: файл `stability_app/data/sounding_fresh.json`. "
+                    "Ключ **FRESH** — одна кривая на оба борта; иначе **FRESH-PTS.P** и **FRESH-STB.S**."
+                )
+                if not _has_snd:
+                    st.info("Таблица не заполнена — введите массу вручную выше или добавьте JSON (см. docs/08-zamery-presnoj-vody.md).")
+                else:
+                    _tp = table_for_fresh_tank("P", _ftbl)
+                    _ts = table_for_fresh_tank("S", _ftbl)
+                    sp = st.number_input("Замер левого танка (мм)", 0.0, 50000.0, 0.0, 1.0, key="snd_fresh_mm_p")
+                    ss = st.number_input("Замер правого танка (мм)", 0.0, 50000.0, 0.0, 1.0, key="snd_fresh_mm_s")
+                    wp = tons_from_sounding_mm(sp, _tp)
+                    ws = tons_from_sounding_mm(ss, _ts)
+                    if wp is not None:
+                        st.caption(f"Лев: **≈ {wp:.2f} т** по таблице")
+                    if ws is not None:
+                        st.caption(f"Прав: **≈ {ws:.2f} т** по таблице")
+                    b1, b2 = st.columns(2)
+                    with b1:
+                        if st.button("Подставить массу левого", key="apply_snd_fresh_p", disabled=wp is None):
+                            st.session_state["_pending_fresh_mass"] = {"stab_t2": float(wp)}
+                            st.rerun()
+                    with b2:
+                        if st.button("Подставить массу правого", key="apply_snd_fresh_s", disabled=ws is None):
+                            st.session_state["_pending_fresh_mass"] = {"stab_t3": float(ws)}
+                            st.rerun()
             m_t2 = st.number_input(
                 BOOKLET_TANKS[2][0].replace(" (пресная, лев)", ""),
                 0.0,
@@ -266,6 +321,46 @@ with tab_stab:
             m_t7 = st.number_input(BOOKLET_TANKS[7][0], 0.0, 500.0, key="stab_t7", step=1.0, help=f"Макс. ≈ {BOOKLET_TANKS[7][3]:.2f} т")
             m_t8 = st.number_input(BOOKLET_TANKS[8][0], 0.0, 500.0, key="stab_t8", step=1.0, help=f"Макс. ≈ {BOOKLET_TANKS[8][3]:.2f} т")
 
+    with st.expander("Положение цистерн: LCG от кормы и KG над килем", expanded=False):
+        st.markdown(
+            "Для расчёта моментов по умолчанию используются **LCG** (абсцисса центра тяжести жидкости от шп. кормы вперёд, м) "
+            "и **KG** (аппликата над килем, м) из **разд. 6 буклета** — см. `tank_booklet.py`."
+        )
+        st.toggle(
+            "Задать свои LCG и KG для девяти цистерн буклета",
+            key="stab_use_custom_tank_geometry",
+            help="Если включено, в таблицу ниже подставляются введённые LCG/KG вместо констант буклета.",
+        )
+        if st.session_state.get("stab_use_custom_tank_geometry"):
+            if st.button("Сбросить LCG/KG к буклету", key="stab_reset_tank_geom"):
+                for k, v in _tank_geometry_preset_state().items():
+                    st.session_state[k] = v
+                st.rerun()
+            for i in range(9):
+                lab = BOOKLET_TANKS[i][0]
+                r1, r2, r3 = st.columns([2.4, 1, 1])
+                with r1:
+                    st.markdown(f"**{i}.** {lab}")
+                with r2:
+                    st.number_input(
+                        "LCG, м",
+                        0.0,
+                        float(LBP_M) + 10.0,
+                        key=f"stab_tank_lcg_{i}",
+                        step=0.001,
+                        format="%.3f",
+                        help="От шп. кормы вперёд (как в буклете).",
+                    )
+                with r3:
+                    st.number_input(
+                        "KG, м",
+                        0.0,
+                        25.0,
+                        key=f"stab_tank_kg_{i}",
+                        step=0.001,
+                        format="%.3f",
+                    )
+
     with st.container(border=True):
         st.markdown("##### Уголь (насыпной груз в трюмах)")
         st.caption(x_note)
@@ -293,10 +388,16 @@ with tab_stab:
         {COL_NAME: "Судно порожнее", COL_MASS: m_light, COL_X: x_light, COL_KG: kg_light},
         {COL_NAME: "Судовое снабжение", COL_MASS: m_stores, COL_X: x_stores, COL_KG: kg_stores},
     ]
+    use_custom_tank = bool(st.session_state.get("stab_use_custom_tank_geometry", False))
     for i, tm in enumerate(tank_mass):
         if tm <= 0:
             continue
-        name, lcg_ap, kg_t, _mx = BOOKLET_TANKS[i]
+        name, lcg_def, kg_def, _mx = BOOKLET_TANKS[i]
+        if use_custom_tank:
+            lcg_ap = float(st.session_state.get(f"stab_tank_lcg_{i}", lcg_def))
+            kg_t = float(st.session_state.get(f"stab_tank_kg_{i}", kg_def))
+        else:
+            lcg_ap, kg_t = lcg_def, kg_def
         xg = x_table_from_lcg_ap(lcg_ap, LBP_M, x_from_midship=x_from_midship)
         rows.append({COL_NAME: name, COL_MASS: tm, COL_X: xg, COL_KG: kg_t})
     if float(m_fuel_svc) > 0:
