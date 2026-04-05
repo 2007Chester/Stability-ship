@@ -16,13 +16,12 @@ import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
 
-from cargo_excel_data import ROWS_CARGO_IN_GRUZ
+from tank_booklet import BOOKLET_TANKS, x_table_from_lcg_ap
 from excel_ui import (
     COL_KG,
     COL_MASS,
     COL_NAME,
     COL_X,
-    normalize_load_columns,
     style_trim_excel,
     trim_table_excel_with_total,
     x_g_to_from_ap,
@@ -85,10 +84,79 @@ with st.sidebar:
 # ——— две страницы ———
 tab_stab, tab_holds = st.tabs(["Остойчивость", "Груз в трюмах по осадкам"])
 
+def _stab_preset_values(name: str) -> dict[str, float]:
+    """Начальные значения полей вкладки остойчивости по шаблону."""
+    if name == "В грузу (из Excel)":
+        return {
+            "stab_m_light": 2210.0,
+            "stab_x_light": 4.133,
+            "stab_kg_light": 4.58,
+            "stab_m_stores": 15.0,
+            "stab_x_stores": -46.0,
+            "stab_kg_stores": 7.2,
+            "stab_m_fuel_svc": 0.0,
+            "stab_x_fuel_svc": -46.0,
+            "stab_kg_fuel_svc": 1.2,
+            "stab_t0": 3.0,
+            "stab_t1": 3.0,
+            "stab_t2": 0.0,
+            "stab_t3": 0.0,
+            "stab_t4": 0.0,
+            "stab_t5": 0.0,
+            "stab_t6": 0.0,
+            "stab_t7": 67.0,
+            "stab_t8": 69.0,
+            "stab_m_coal": 6500.0,
+            "stab_x_coal": 0.5,
+            "stab_kg_coal": 6.1,
+        }
+    if name == "Пустая строка":
+        return {
+            "stab_m_light": 1000.0,
+            "stab_x_light": 0.0,
+            "stab_kg_light": 4.5,
+            "stab_m_stores": 0.0,
+            "stab_x_stores": 0.0,
+            "stab_kg_stores": 4.5,
+            "stab_m_fuel_svc": 0.0,
+            "stab_x_fuel_svc": 0.0,
+            "stab_kg_fuel_svc": 4.5,
+            **{f"stab_t{i}": 0.0 for i in range(9)},
+            "stab_m_coal": 0.0,
+            "stab_x_coal": 0.0,
+            "stab_kg_coal": 4.5,
+        }
+    # Без груза (балласт)
+    return {
+        "stab_m_light": 2210.0,
+        "stab_x_light": 4.133,
+        "stab_kg_light": 4.58,
+        "stab_m_stores": 9.0,
+        "stab_x_stores": -46.0,
+        "stab_kg_stores": 7.2,
+        "stab_m_fuel_svc": 0.0,
+        "stab_x_fuel_svc": -46.0,
+        "stab_kg_fuel_svc": 1.2,
+        "stab_t0": 0.0,
+        "stab_t1": 0.0,
+        "stab_t2": 0.0,
+        "stab_t3": 0.0,
+        "stab_t4": 0.0,
+        "stab_t5": 0.0,
+        "stab_t6": 0.0,
+        "stab_t7": 51.0,
+        "stab_t8": 50.0,
+        "stab_m_coal": 0.0,
+        "stab_x_coal": 0.0,
+        "stab_kg_coal": 4.5,
+    }
+
+
 with tab_stab:
     st.markdown("## Расчёт остойчивости")
     st.caption(
-        "Заполните таблицу загрузки. Сумма масс → водоизмещение и осадка; ниже — **GM**, критерии **ИМО A.749** и диаграмма **GZ**."
+        "Массы **по цистернам буклета** (LCG/KG танков из разд. 6) + порожнее, снабжение, расходные, **уголь**. "
+        "Сумма масс → Δ и осадка; ниже — **GM**, **ИМО A.749**, диаграмма **GZ**."
     )
 
     preset = st.selectbox(
@@ -97,43 +165,124 @@ with tab_stab:
         index=0,
         key="preset_v2",
     )
-    defaults = {
-        "В грузу (из Excel)": [dict(r) for r in ROWS_CARGO_IN_GRUZ],
-        "Пустая строка": [{COL_NAME: "Груз / балласт", COL_MASS: 1000.0, COL_X: 0.0, COL_KG: 4.5}],
-        "Без груза (балласт)": [
-            {COL_NAME: "Судно порожнее", COL_MASS: 2210.0, COL_X: 4.133, COL_KG: 4.58},
-            {COL_NAME: "Снабжение", COL_MASS: 9.0, COL_X: -46.0, COL_KG: 7.2},
-            {COL_NAME: "Балласт Л/Б", COL_MASS: 51.0, COL_X: -37.8, COL_KG: 1.15},
-            {COL_NAME: "Балласт ПР/Б", COL_MASS: 50.0, COL_X: -37.8, COL_KG: 1.15},
-        ],
-    }
-    if st.session_state.get("last_preset_v2") != preset or "load_df_v2" not in st.session_state:
-        st.session_state.load_df_v2 = pd.DataFrame(defaults[preset])
+    if st.session_state.get("last_preset_v2") != preset:
+        for k, v in _stab_preset_values(preset).items():
+            st.session_state[k] = v
         st.session_state.last_preset_v2 = preset
-    st.session_state.load_df_v2 = normalize_load_columns(st.session_state.load_df_v2)
 
-    edited = st.data_editor(
-        st.session_state.load_df_v2,
-        num_rows="dynamic",
-        use_container_width=True,
-        key="editor_v2",
-        column_config={
-            COL_NAME: st.column_config.TextColumn(COL_NAME, width="large", required=True),
-            COL_MASS: st.column_config.NumberColumn(COL_MASS, format="%.2f", min_value=0.0),
-            COL_X: st.column_config.NumberColumn(COL_X, format="%.3f"),
-            COL_KG: st.column_config.NumberColumn(COL_KG, format="%.3f"),
-        },
-        height=280,
-    )
-    edited = normalize_load_columns(edited)
-    st.session_state.load_df_v2 = edited
+    x_note = "**X** — от миделя (+ к носу)" if x_from_midship else "**X** — от шп. кормы вперёд"
 
+    with st.container(border=True):
+        st.markdown("##### Порожнее судно и снабжение")
+        st.caption(x_note)
+        c1, c2 = st.columns(2)
+        with c1:
+            m_light = st.number_input("Судно порожнее, т", 0.0, 50000.0, key="stab_m_light", step=10.0)
+            x_light = st.number_input("X порожнего, м", -200.0, 200.0, key="stab_x_light", step=0.01)
+            kg_light = st.number_input("KG порожнего, м", 0.0, 30.0, key="stab_kg_light", step=0.01)
+        with c2:
+            m_stores = st.number_input("Судовое снабжение, т", 0.0, 5000.0, key="stab_m_stores", step=1.0)
+            x_stores = st.number_input("X снабжения, м", -200.0, 200.0, key="stab_x_stores", step=0.01)
+            kg_stores = st.number_input("KG снабжения, м", 0.0, 30.0, key="stab_kg_stores", step=0.01)
+
+    with st.container(border=True):
+        st.markdown("##### Топливо и пресная вода (LCG/KG из буклета)")
+        st.caption("Масса в тоннах; положение центра тяжести жидкости — по таблице вместимости (100%).")
+        tf1, tf2 = st.columns(2)
+        with tf1:
+            st.markdown("**Дизельное топливо**")
+            m_t0 = st.number_input(
+                BOOKLET_TANKS[0][0].replace(" (топливо, лев)", ""),
+                0.0,
+                500.0,
+                key="stab_t0",
+                step=0.5,
+                help=f"Макс. ≈ {BOOKLET_TANKS[0][3]:.2f} т",
+            )
+            m_t1 = st.number_input(
+                BOOKLET_TANKS[1][0].replace(" (топливо, прав)", ""),
+                0.0,
+                500.0,
+                key="stab_t1",
+                step=0.5,
+                help=f"Макс. ≈ {BOOKLET_TANKS[1][3]:.2f} т",
+            )
+            m_fuel_svc = st.number_input("Расходные цистерны (не из табл. буклета), т", 0.0, 200.0, key="stab_m_fuel_svc", step=0.5)
+            x_fuel_svc = st.number_input("X расходных, м", -200.0, 200.0, key="stab_x_fuel_svc", step=0.01)
+            kg_fuel_svc = st.number_input("KG расходных, м", 0.0, 15.0, key="stab_kg_fuel_svc", step=0.01)
+        with tf2:
+            st.markdown("**Пресная вода**")
+            m_t2 = st.number_input(
+                BOOKLET_TANKS[2][0].replace(" (пресная, лев)", ""),
+                0.0,
+                500.0,
+                key="stab_t2",
+                step=0.5,
+                help=f"Макс. ≈ {BOOKLET_TANKS[2][3]:.2f} т",
+            )
+            m_t3 = st.number_input(
+                BOOKLET_TANKS[3][0].replace(" (пресная, прав)", ""),
+                0.0,
+                500.0,
+                key="stab_t3",
+                step=0.5,
+                help=f"Макс. ≈ {BOOKLET_TANKS[3][3]:.2f} т",
+            )
+
+    with st.container(border=True):
+        st.markdown("##### Балластная вода (разд. 6 буклета)")
+        b1, b2, b3 = st.columns(3)
+        with b1:
+            m_t4 = st.number_input(BOOKLET_TANKS[4][0], 0.0, 500.0, key="stab_t4", step=1.0, help=f"Макс. ≈ {BOOKLET_TANKS[4][3]:.2f} т")
+            m_t5 = st.number_input(BOOKLET_TANKS[5][0], 0.0, 500.0, key="stab_t5", step=1.0, help=f"Макс. ≈ {BOOKLET_TANKS[5][3]:.2f} т")
+        with b2:
+            m_t6 = st.number_input(BOOKLET_TANKS[6][0], 0.0, 500.0, key="stab_t6", step=1.0, help=f"Макс. ≈ {BOOKLET_TANKS[6][3]:.2f} т")
+        with b3:
+            m_t7 = st.number_input(BOOKLET_TANKS[7][0], 0.0, 500.0, key="stab_t7", step=1.0, help=f"Макс. ≈ {BOOKLET_TANKS[7][3]:.2f} т")
+            m_t8 = st.number_input(BOOKLET_TANKS[8][0], 0.0, 500.0, key="stab_t8", step=1.0, help=f"Макс. ≈ {BOOKLET_TANKS[8][3]:.2f} т")
+
+    with st.container(border=True):
+        st.markdown("##### Уголь (насыпной груз в трюмах)")
+        st.caption(x_note)
+        u1, u2, u3 = st.columns(3)
+        with u1:
+            m_coal = st.number_input("Масса угля, т", 0.0, 20000.0, key="stab_m_coal", step=50.0)
+        with u2:
+            x_coal = st.number_input("X угля, м", -200.0, 200.0, key="stab_x_coal", step=0.01)
+        with u3:
+            kg_coal = st.number_input("KG угля, м", 0.0, 20.0, key="stab_kg_coal", step=0.01)
+
+    tank_mass = [float(st.session_state.get(f"stab_t{i}", 0.0)) for i in range(9)]
+
+    rows: list[dict[str, str | float]] = [
+        {COL_NAME: "Судно порожнее", COL_MASS: m_light, COL_X: x_light, COL_KG: kg_light},
+        {COL_NAME: "Судовое снабжение", COL_MASS: m_stores, COL_X: x_stores, COL_KG: kg_stores},
+    ]
+    for i, tm in enumerate(tank_mass):
+        if tm <= 0:
+            continue
+        name, lcg_ap, kg_t, _mx = BOOKLET_TANKS[i]
+        xg = x_table_from_lcg_ap(lcg_ap, LBP_M, x_from_midship=x_from_midship)
+        rows.append({COL_NAME: name, COL_MASS: tm, COL_X: xg, COL_KG: kg_t})
+    if float(m_fuel_svc) > 0:
+        rows.append(
+            {
+                COL_NAME: "Топливо расходные",
+                COL_MASS: float(m_fuel_svc),
+                COL_X: float(x_fuel_svc),
+                COL_KG: float(kg_fuel_svc),
+            }
+        )
+    if float(m_coal) > 0:
+        rows.append({COL_NAME: "Уголь", COL_MASS: m_coal, COL_X: x_coal, COL_KG: kg_coal})
+
+    edited = pd.DataFrame(rows)
     tbl_excel = trim_table_excel_with_total(
         edited, x_from_midship=x_from_midship, lbp_m=LBP_M
     )
     if not tbl_excel.empty:
         with st.container(border=True):
-            st.markdown("##### Итог по таблице (моменты, LCG, KG)")
+            st.markdown("##### Итог (моменты, LCG, KG)")
             st.dataframe(style_trim_excel(tbl_excel), use_container_width=True, hide_index=True)
 
     df = edited.dropna(subset=[COL_MASS])
