@@ -49,6 +49,8 @@ def build_hold_profile_figure(
 
     stow: dict[str, Any] = coal_uniform_stowage_m(coal_mass_t, rho_coal_t_m3)
     h_cargo = float(stow["h_from_inner_bottom_m"])
+    depth_deck_to_cargo = float(stow["depth_from_main_deck_to_cargo_m"])
+    hold_moulded = float(stow["hold_depth_moulded_m"])
     clearance = float(stow["clearance_cooming_m"])
     capped = bool(stow["capped_by_cooming"])
     tons_per_section = float(stow["tons_per_section"])
@@ -84,7 +86,7 @@ def build_hold_profile_figure(
         )
     )
 
-    # Грузовой трюм (пространство от вн. дна до гл. палубы)
+    # Грузовой трюм: сверху ограничен главной палубой, снизу — внутренним дном
     fig.add_trace(
         go.Scatter(
             x=[ha, hf, hf, ha, ha],
@@ -93,12 +95,12 @@ def build_hold_profile_figure(
             line=dict(color="#2874a6", width=1.5, dash="dot"),
             fill="toself",
             fillcolor="rgba(133, 193, 233, 0.2)",
-            name="Трюм (до гл. палубы)",
+            name="Грузовой трюм (от гл. палубы вниз)",
             hoverinfo="skip",
         )
     )
 
-    # Комингсы люка (над главной палубой в зоне трюма)
+    # Комингсы люка (над главной палубой — продолжение люка вверх)
     fig.add_trace(
         go.Scatter(
             x=[ha, ha, hf, hf, ha],
@@ -222,7 +224,7 @@ def build_hold_profile_figure(
     fig.add_annotation(
         x=lbp * 0.02,
         y=y_deck + 0.05,
-        text="Главная палуба",
+        text="Главная палуба — верх трюма",
         showarrow=False,
         font=dict(size=10, color="#34495e"),
         xanchor="left",
@@ -277,6 +279,8 @@ def build_hold_profile_figure(
 
     sub = (
         "<b>Масштаб чертежа:</b> оси X и Y в одинаковых метрах (1:1), как на типовом GA. "
+        f"Трюм — <b>ниже главной палубы</b>, глубина трюма (палуба → вн. дно): <b>{hold_moulded:.2f} м</b>. "
+        f"От палубы вниз до поверхности груза: <b>{depth_deck_to_cargo:.2f} м</b>. "
         f"Вн. дно над килем: <b>{y_tt:.2f} м</b> · палуба (D): <b>{y_deck:.3f} м</b> · верх комингсов: <b>{y_coom:.2f} м</b> "
         f"(+{h_coom:.2f} м к палубе). Секции: ~{section_length_m():.2f} м. "
         f"Насыпь от <b>внутреннего дна</b>: <b>{h_cargo:.2f} м</b>"
