@@ -337,7 +337,7 @@ with tab_stab:
             ),
             horizontal=True,
             key="plan_x_target",
-            help="Кликните по корпусу или палубе: координата по длине перенесётся в поле X выбранной строки.",
+            help="Кликните по корпусу или палубе: координата по длине перенесётся в поле X выбранной строки. Масштаб схемы зафиксирован — колесо не увеличивает график.",
         )
         fig_plan = load_plan_figure(
             edited,
@@ -346,7 +346,6 @@ with tab_stab:
             float(SHIP["beam_m"]),
             from_midship=x_from_midship,
         )
-        fig_plan.update_layout(clickmode="event")
         events = plotly_events(
             fig_plan,
             click_event=True,

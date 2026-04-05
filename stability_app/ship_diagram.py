@@ -124,11 +124,13 @@ def load_plan_figure(
             )
         )
 
+    # Без фиксации осей колесо мыши и рамка Zoom в Plotly перехватывают жесты вместо клика по палубе.
     fig.update_xaxes(
         title="Расстояние от шп. кормы вперёд, м (нос справа)",
         range=[-loa * 0.02, loa * 1.02],
         gridcolor="#eeeeee",
         zeroline=False,
+        fixedrange=True,
     )
     fig.update_yaxes(
         title="Поперечник (схема), м",
@@ -137,6 +139,7 @@ def load_plan_figure(
         scaleratio=1,
         gridcolor="#eeeeee",
         zeroline=False,
+        fixedrange=True,
     )
 
     fig.add_annotation(
@@ -161,5 +164,6 @@ def load_plan_figure(
         height=440,
         margin=dict(l=52, r=24, t=48, b=40),
         hovermode="closest",
+        dragmode=False,
     )
     return fig
