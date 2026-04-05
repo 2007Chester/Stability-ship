@@ -256,13 +256,19 @@ def build_hold_profile_figure(
             title="От шп. кормы (м)",
             range=[-1.5, max(loa, lbp) + 1.5],
             zeroline=False,
+            constrain="domain",
         ),
         yaxis=dict(
             title="Высота от киля (м)",
             range=[-0.25, y_max],
             zeroline=False,
+            # 1 м по длине судна = 1 м по высоте (как на чертеже с масштабом по осям)
+            scaleanchor="x",
+            scaleratio=1,
+            constrain="domain",
         ),
-        height=520,
+        # Высота области графика: при L/D ≈ 16 корпус визуально «низкий» — это верные пропорции
+        height=640,
         margin=dict(l=58, r=36, t=72, b=88),
         legend=dict(orientation="h", yanchor="bottom", y=1.03, xanchor="center", x=0.5, font=dict(size=10)),
         template="plotly_white",
@@ -270,6 +276,7 @@ def build_hold_profile_figure(
     )
 
     sub = (
+        "<b>Масштаб чертежа:</b> оси X и Y в одинаковых метрах (1:1), как на типовом GA. "
         f"Вн. дно над килем: <b>{y_tt:.2f} м</b> · палуба (D): <b>{y_deck:.3f} м</b> · верх комингсов: <b>{y_coom:.2f} м</b> "
         f"(+{h_coom:.2f} м к палубе). Секции: ~{section_length_m():.2f} м. "
         f"Насыпь от <b>внутреннего дна</b>: <b>{h_cargo:.2f} м</b>"
