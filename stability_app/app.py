@@ -1,5 +1,5 @@
 """
-РЕЙД-8: остойчивость (ИМО A.749 + диаграмма GZ) и оценка груза по грузовой марке.
+РЕЙД-8: остойчивость (ИМО A.749 + диаграмма GZ) и груз в трюмах по осадкам.
 
 Запуск: python3 -m streamlit run app.py
 """
@@ -29,7 +29,7 @@ from excel_ui import (
 )
 from ship_data import SHIP
 from stability import (
-    displacement_from_draft,
+    cargo_mass_from_drafts,
     draft_from_displacement,
     drafts_fwd_aft_from_lcg,
     gm_metacentric,
@@ -56,7 +56,7 @@ st.markdown(
 )
 
 st.markdown("# РЕЙД-8")
-st.caption("Остойчивость по буклету · груз по летней грузовой марке")
+st.caption("Остойчивость по буклету · оценка насыпного груза в трюмах по осадкам")
 
 # ——— боковая панель ———
 with st.sidebar:
@@ -77,7 +77,7 @@ with st.sidebar:
     )
 
 # ——— две страницы ———
-tab_stab, tab_loadline = st.tabs(["Остойчивость", "Груз по грузовой марке"])
+tab_stab, tab_holds = st.tabs(["Остойчивость", "Груз в трюмах по осадкам"])
 
 with tab_stab:
     st.markdown("## Расчёт остойчивости")
@@ -273,62 +273,121 @@ with tab_stab:
         "Синяя зона — плечо остойчивости; красная — начальная касательная GM·φ (φ в радианах); зелёные линии — максимум GZ и угол при нём."
     )
 
-with tab_loadline:
-    st.markdown("## Груз по грузовой марке")
-    t_summer = float(SHIP["draft_summer_m"])
-    delta_summer = displacement_from_draft(t_summer)
-
-    c1, c2 = st.columns(2)
-    with c1:
-        with st.container(border=True):
-            st.metric(
-                "Летняя грузовая марка (осадка)",
-                f"{t_summer:.3f} м",
-                help="Значение из данных судна / буклета для маркировки.",
-            )
-    with c2:
-        with st.container(border=True):
-            st.metric(
-                "Водоизмещение на этой осадке Δ",
-                f"{delta_summer:,.0f} т".replace(",", " "),
-            )
-
-    st.info(
-        "Насыпной груз (уголь и т.п.), который **теоретически помещается** при опускании судна "
-        "до осадки летней марки: **M_груз ≈ Δ(марка) − M_всё_кроме_насыпного**."
+with tab_holds:
+    st.markdown("## Груз в трюмах по осадкам")
+    st.caption(
+        "Введите **измеренные осадки**, массы **топлива**, **пресной воды**, **балласта** и всё **прочее** без насыпного груза в трюмах — "
+        "получите оценку **массы погруженного груза в трюмах**."
     )
 
-    default_wo = float(st.session_state.get("m_wo_coal_v2", 2367.0))
-    m_without = st.number_input(
-        "Масса на борту без насыпного груза в трюмах, т",
+    col_d, col_f = st.columns(2)
+    with col_d:
+        with st.container(border=True):
+            st.markdown("##### Осадки (по перпендикулярам)")
+            t_fwd = st.number_input(
+                "Осадка носом, м",
+                min_value=0.5,
+                max_value=float(SHIP["depth_m"]) + 0.5,
+                value=3.50,
+                step=0.01,
+                format="%.2f",
+                key="holds_t_fwd",
+            )
+            t_aft = st.number_input(
+                "Осадка кормой, м",
+                min_value=0.5,
+                max_value=float(SHIP["depth_m"]) + 0.5,
+                value=3.50,
+                step=0.01,
+                format="%.2f",
+                key="holds_t_aft",
+            )
+    with col_f:
+        with st.container(border=True):
+            st.markdown("##### Топливо и вода, т")
+            m_fuel_tanks = st.number_input(
+                "Топливо в танках",
+                min_value=0.0,
+                value=6.0,
+                step=0.5,
+                key="holds_fuel_tanks",
+            )
+            m_fuel_svc = st.number_input(
+                "Топливо в расходных цистернах",
+                min_value=0.0,
+                value=0.0,
+                step=0.5,
+                key="holds_fuel_svc",
+            )
+            m_fw = st.number_input(
+                "Пресная вода в танках",
+                min_value=0.0,
+                value=0.0,
+                step=0.5,
+                key="holds_fw",
+            )
+
+    with st.container(border=True):
+        st.markdown("##### Балласт, т")
+        b1, b2 = st.columns(2)
+        with b1:
+            m_ball_ps = st.number_input("Левый борт", min_value=0.0, value=0.0, step=1.0, key="holds_ball_ps")
+        with b2:
+            m_ball_sb = st.number_input("Правый борт", min_value=0.0, value=0.0, step=1.0, key="holds_ball_sb")
+
+    m_other = st.number_input(
+        "Прочее без груза в трюмах (корпус порожний, снабжение, экипаж и т.д.), т",
         min_value=0.0,
-        value=max(default_wo, 0.0),
+        value=2225.0,
         step=10.0,
-        help="Порожний корпус, балласт, топливо, снабжение — всё, кроме угля/насыпного груза.",
-        key="m_wo_loadline",
+        help="Всё, кроме насыпного груза в трюмах: вместе с балластом и жидкостями выше даёт «массу без трюмного груза».",
+        key="holds_m_other",
     )
-    cargo_at_line = max(delta_summer - m_without, 0.0)
+
+    m_wo_hold = (
+        float(m_fuel_tanks)
+        + float(m_fuel_svc)
+        + float(m_fw)
+        + float(m_ball_ps)
+        + float(m_ball_sb)
+        + float(m_other)
+    )
+    delta_h, t_mean_h, cargo_h = cargo_mass_from_drafts(t_fwd, t_aft, m_wo_hold)
+    trim_cm = (float(t_aft) - float(t_fwd)) * 100.0
 
     st.markdown("---")
-    big1, big2 = st.columns(2)
-    with big1:
-        with st.container(border=True):
-            st.markdown("##### Запас по марке")
-            st.metric(
-                "Оценка массы насыпного груза до летней марки",
-                f"{cargo_at_line:,.0f} т".replace(",", " "),
-            )
-    with big2:
-        with st.container(border=True):
-            rho = st.number_input("Плотность груза (для объёма), т/м³", 0.5, 1.3, 0.85, 0.05)
-            if rho > 0 and cargo_at_line > 0:
-                st.metric("Ориентировочный объём", f"{cargo_at_line / rho:,.0f} м³".replace(",", " "))
+    r1, r2, r3, r4 = st.columns(4)
+    r1.metric("Средняя осадка T_ср", f"{t_mean_h:.3f} м")
+    r2.metric("Дифферент (корма − нос)", f"{trim_cm:+.1f} см")
+    r3.metric("Водоизмещение Δ", f"{delta_h:,.0f} т".replace(",", " "))
+    r4.metric("Погруженный груз в трюмах (оценка)", f"{cargo_h:,.0f} т".replace(",", " "))
 
-    if m_without > delta_summer:
-        st.error("Масса без груза больше водоизмещения на марке — проверьте ввод.")
-    elif cargo_at_line <= 0:
-        st.warning("При таких массах запаса груза до марки нет (или ввод некорректен).")
+    if cargo_h <= 0:
+        st.warning(
+            "Сумма масс **без трюмного груза** получается не меньше **Δ** по осадке — проверьте осадки и введённые массы."
+        )
+    else:
+        with st.container(border=True):
+            st.success(
+                f"Оценка массы **насыпного груза в трюмах** (уголь и т.п.): **{cargo_h:,.1f} т**.".replace(",", " ")
+            )
+            rho_h = st.number_input("Плотность груза для объёма, т/м³", 0.5, 1.3, 0.85, 0.05, key="rho_holds")
+            if rho_h > 0:
+                st.caption(f"Ориентировочный объём: **{cargo_h / rho_h:,.0f} м³**".replace(",", " "))
+
+    with st.expander("Как считается"):
+        st.markdown(
+            f"""
+- **T_ср** = (T_нос + T_корма) / 2 → по гидростатике буклета **Δ** (т).
+- **M_груз_трюмы** = Δ − (топливо + пресная вода + балласт + прочее).
+- Кривые **GZ** в буклете для **дифферента 0**; при большом дифференте оценка **приближённая**.
+- Глубина по маркировке: **{SHIP["depth_m"]}** м.
+            """
+        )
 
     st.caption(
-        "Расчёт по гидростатике буклета (дифферент 0). Фактические допуски и зоны — в свидетельстве о грузовой марке и классе."
+        f"Без трюмного груза учтено: **{m_wo_hold:,.1f}** т "
+        f"(топливо {m_fuel_tanks + m_fuel_svc:.1f} + вода {m_fw:.1f} + балласт {m_ball_ps + m_ball_sb:.1f} + прочее {m_other:.1f}).".replace(
+            ",", " "
+        )
     )
