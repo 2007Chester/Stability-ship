@@ -75,6 +75,28 @@ def load_plan_figure(
         )
     )
 
+    # streamlit-plotly-events шлёт данные только если e.points не пустой. Клик по заливке
+    # корпуса почти всегда даёт points=[] — координаты не приходят. Плотные невидимые
+    # маркеры вдоль ДП принимают клик и дают нужный x (LCG от кормы).
+    _n_deck = max(100, int(loa * 2))
+    _xd = np.linspace(0.0, loa, _n_deck)
+    _yd = np.zeros(_n_deck, dtype=float)
+    fig.add_trace(
+        go.Scatter(
+            x=_xd,
+            y=_yd,
+            mode="markers",
+            marker=dict(
+                size=18,
+                color="rgba(255,255,255,0.04)",
+                line=dict(width=0),
+            ),
+            hoverinfo="skip",
+            showlegend=False,
+            name="Клик по палубе",
+        )
+    )
+
     if df is None or df.empty or COL_X not in df.columns:
         fig.update_layout(title=title, template="plotly_white", height=420)
         return fig
