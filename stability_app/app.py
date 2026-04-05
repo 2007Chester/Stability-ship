@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+from streamlit_plotly_events import plotly_events
 
 from tank_booklet import BOOKLET_TANKS, x_table_from_lcg_ap
 from excel_ui import (
@@ -27,6 +28,7 @@ from excel_ui import (
     COL_NAME,
     COL_X,
     style_trim_excel,
+    table_x_from_lcg_ap,
     trim_table_excel_with_total,
     x_g_to_from_ap,
 )
@@ -326,6 +328,17 @@ with tab_stab:
             "Прямоугольник — корпус по длине **LOA**; пунктир — **мидель** (LBP/2 от кормы). "
             "Точки — центры масс строк загрузки; ось совпадает с **LCG от кормы** (как в гидростатике)."
         )
+        st.radio(
+            "Клик по плану задаёт продольный **X** для:",
+            (
+                "Судовое снабжение (припасы)",
+                "Уголь",
+                "Топливо расходные",
+            ),
+            horizontal=True,
+            key="plan_x_target",
+            help="Кликните по корпусу или палубе: координата по длине перенесётся в поле X выбранной строки.",
+        )
         fig_plan = load_plan_figure(
             edited,
             LBP_M,
@@ -333,7 +346,35 @@ with tab_stab:
             float(SHIP["beam_m"]),
             from_midship=x_from_midship,
         )
-        st.plotly_chart(fig_plan, use_container_width=True)
+        fig_plan.update_layout(clickmode="event")
+        events = plotly_events(
+            fig_plan,
+            click_event=True,
+            select_event=False,
+            hover_event=False,
+            key="load_plan_click",
+            override_height=440,
+            override_width="100%",
+        )
+        if events:
+            try:
+                x_ap = float(events[0]["x"])
+            except (KeyError, TypeError, ValueError, IndexError):
+                x_ap = None
+            if x_ap is not None:
+                x_tbl = table_x_from_lcg_ap(x_ap, LBP_M, from_midship=x_from_midship)
+                x_tbl = float(np.clip(x_tbl, -200.0, 200.0))
+                tgt = str(st.session_state.get("plan_x_target", ""))
+                sig = (tgt, round(x_ap, 3), round(x_tbl, 3))
+                if st.session_state.get("_plan_click_sig") != sig:
+                    st.session_state["_plan_click_sig"] = sig
+                    if "припасы" in tgt or "Снабжение" in tgt:
+                        st.session_state["stab_x_stores"] = x_tbl
+                    elif "Уголь" in tgt:
+                        st.session_state["stab_x_coal"] = x_tbl
+                    elif "Расходные" in tgt or "расходные" in tgt:
+                        st.session_state["stab_x_fuel_svc"] = x_tbl
+                    st.rerun()
 
     tbl_excel = trim_table_excel_with_total(
         edited, x_from_midship=x_from_midship, lbp_m=LBP_M

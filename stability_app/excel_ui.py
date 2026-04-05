@@ -54,6 +54,18 @@ def x_g_to_from_ap(
     return x + float(lbp_m) / 2.0
 
 
+def table_x_from_lcg_ap(
+    lcg_ap_m: float,
+    lbp_m: float,
+    *,
+    from_midship: bool,
+) -> float:
+    """Обратно к x_g_to_from_ap: LCG от шп. кормы → X в таблице (от миделя или от кормы)."""
+    if from_midship:
+        return float(lcg_ap_m) - float(lbp_m) / 2.0
+    return float(lcg_ap_m)
+
+
 def trim_table_excel_with_total(
     df: pd.DataFrame,
     *,

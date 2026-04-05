@@ -6,11 +6,21 @@ import sys
 import unittest
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from excel_ui import COL_KG, COL_MASS, COL_NAME, COL_X, normalize_load_columns, trim_table_excel_with_total
+from excel_ui import (
+    COL_KG,
+    COL_MASS,
+    COL_NAME,
+    COL_X,
+    normalize_load_columns,
+    table_x_from_lcg_ap,
+    trim_table_excel_with_total,
+    x_g_to_from_ap,
+)
 
 
 class TestExcelUi(unittest.TestCase):
@@ -33,6 +43,19 @@ class TestExcelUi(unittest.TestCase):
         self.assertAlmostEqual(last[COL_MASS], 200.0)
         self.assertAlmostEqual(last[COL_X], 5.0)  # LCG
         self.assertAlmostEqual(last[COL_KG], 5.0)  # KG
+
+    def test_lcg_ap_roundtrip_midship(self):
+        lbp = 96.78
+        for xm in (-10.0, 0.0, 20.0, 40.0):
+            ap = float(x_g_to_from_ap(np.array([xm]), lbp, from_midship=True)[0])
+            back = table_x_from_lcg_ap(ap, lbp, from_midship=True)
+            self.assertAlmostEqual(back, xm, places=5)
+
+    def test_lcg_ap_roundtrip_from_ap(self):
+        lbp = 96.78
+        for xap in (5.0, 48.39, 90.0):
+            back = table_x_from_lcg_ap(xap, lbp, from_midship=False)
+            self.assertAlmostEqual(back, xap)
 
 
 if __name__ == "__main__":
