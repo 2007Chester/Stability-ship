@@ -21,6 +21,7 @@ import plotly.graph_objects as go
 import streamlit as st
 from streamlit_plotly_events import plotly_events
 
+from cargo_excel_data import PRESET_V2_GRUZ
 from tank_booklet import BOOKLET_TANKS, x_table_from_lcg_ap
 from excel_ui import (
     COL_KG,
@@ -129,26 +130,7 @@ tab_stab, tab_holds = st.tabs(["Остойчивость", "Груз в трюм
 def _stab_preset_values(name: str) -> dict[str, float]:
     """Начальные значения полей вкладки остойчивости по шаблону."""
     if name == "В грузу (из Excel)":
-        return {
-            "stab_m_stores": 15.0,
-            "stab_x_stores": -46.0,
-            "stab_kg_stores": 7.2,
-            "stab_m_fuel_svc": 0.0,
-            "stab_x_fuel_svc": -46.0,
-            "stab_kg_fuel_svc": 1.2,
-            "stab_t0": 3.0,
-            "stab_t1": 3.0,
-            "stab_t2": 0.0,
-            "stab_t3": 0.0,
-            "stab_t4": 0.0,
-            "stab_t5": 0.0,
-            "stab_t6": 0.0,
-            "stab_t7": 67.0,
-            "stab_t8": 69.0,
-            "stab_m_coal": 6500.0,
-            "stab_x_coal": 0.5,
-            "stab_kg_coal": 6.1,
-        }
+        return dict(PRESET_V2_GRUZ)
     if name == "Пустая строка":
         return {
             "stab_m_stores": 0.0,
