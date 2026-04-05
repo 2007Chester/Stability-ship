@@ -19,7 +19,6 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
-from streamlit_plotly_events import plotly_events
 
 from cargo_excel_data import PRESET_V2_GRUZ
 from tank_booklet import BOOKLET_TANKS, x_table_from_lcg_ap
@@ -29,12 +28,10 @@ from excel_ui import (
     COL_NAME,
     COL_X,
     style_trim_excel,
-    table_x_from_lcg_ap,
     trim_table_excel_with_total,
     x_g_to_from_ap,
 )
 from ship_data import SHIP
-from ship_diagram import load_plan_figure
 from sounding_tables import load_fresh_sounding_tables, table_for_fresh_tank, tons_from_sounding_mm
 from stability import (
     cargo_mass_from_drafts,
@@ -46,15 +43,6 @@ from stability import (
 )
 
 LBP_M = float(SHIP.get("lbp_m", 96.78))
-
-
-def _booklet_default_lcg_kg() -> tuple[list[float], list[float]]:
-    """LCG и KG по BOOKLET_TANKS (разд. 6 буклета). Считается здесь, а не импортом из tank_booklet — чтобы деплой не ломался при рассинхроне файлов."""
-
-    lcgs = [float(t[1]) for t in BOOKLET_TANKS]
-    kgs = [float(t[2]) for t in BOOKLET_TANKS]
-    return lcgs, kgs
-
 
 # Ориентир макс. массы при 100% (буклет, разд. 6) — только для подсказок «?»
 M_MAX_BW01 = 221.76
@@ -138,21 +126,10 @@ with st.sidebar:
 tab_stab, tab_holds = st.tabs(["Остойчивость", "Груз в трюмах по осадкам"])
 
 
-def _tank_geometry_preset_state() -> dict[str, float | bool]:
-    """LCG/KG по буклету (разд. 6) и выключенный режим своих координат."""
-    lcgs, kgs = _booklet_default_lcg_kg()
-    d: dict[str, float | bool] = {"stab_use_custom_tank_geometry": False}
-    for i in range(9):
-        d[f"stab_tank_lcg_{i}"] = lcgs[i]
-        d[f"stab_tank_kg_{i}"] = kgs[i]
-    return d
-
-
-def _stab_preset_values(name: str) -> dict[str, float | bool]:
+def _stab_preset_values(name: str) -> dict[str, float]:
     """Начальные значения полей вкладки остойчивости по шаблону."""
-    geom = _tank_geometry_preset_state()
     if name == "В грузу (из Excel)":
-        return {**dict(PRESET_V2_GRUZ), **geom}
+        return dict(PRESET_V2_GRUZ)
     if name == "Пустая строка":
         return {
             "stab_m_stores": 0.0,
@@ -165,7 +142,6 @@ def _stab_preset_values(name: str) -> dict[str, float | bool]:
             "stab_m_coal": 0.0,
             "stab_x_coal": 0.0,
             "stab_kg_coal": 4.5,
-            **geom,
         }
     # Без груза (балласт)
     return {
@@ -187,14 +163,13 @@ def _stab_preset_values(name: str) -> dict[str, float | bool]:
         "stab_m_coal": 0.0,
         "stab_x_coal": 0.0,
         "stab_kg_coal": 4.5,
-        **geom,
     }
 
 
 with tab_stab:
     st.markdown("## Расчёт остойчивости")
     st.caption(
-        "Массы **по цистернам буклета** (по умолчанию LCG/KG из разд. 6; можно задать свои — см. блок «Положение цистерн») + **порожнее из буклета** (фикс.), снабжение, расходные, **уголь**. "
+        "Массы **по цистернам буклета** — **LCG и KG жидкости** только из **разд. 6** (`tank_booklet.py`); **порожнее** из буклета (фикс.), снабжение, расходные, **уголь**. "
         "Сумма масс → Δ и осадка; ниже — **GM**, **ИМО A.749**, диаграмма **GZ**."
     )
 
@@ -208,14 +183,6 @@ with tab_stab:
         for k, v in _stab_preset_values(preset).items():
             st.session_state[k] = v
         st.session_state.last_preset_v2 = preset
-
-    # Клик по плану обрабатывается после виджетов; нельзя писать в key виджета в том же прогоне.
-    # Переносим координаты сюда, до st.number_input / st.slider с теми же key.
-    _pending = st.session_state.pop("_plan_click_pending", None)
-    if isinstance(_pending, dict):
-        for _k, _v in _pending.items():
-            if _k in ("stab_x_stores", "stab_x_coal", "stab_x_fuel_svc"):
-                st.session_state[_k] = float(_v)
 
     _pf = st.session_state.pop("_pending_fresh_mass", None)
     if isinstance(_pf, dict):
@@ -248,8 +215,7 @@ with tab_stab:
         with tf1:
             st.markdown("**Дизельное топливо**")
             st.caption(
-                "Центры тяжести жидкости в таблице — **KG при полной вместимости** из буклета; "
-                "при частичном заполнении реальный **KG** ниже — при необходимости включите свои LCG/KG ниже."
+                "**LCG/KG** — из разд. 6 буклета (как при полной вместимости); при частичном заполнении модель такая же, как в методике буклета."
             )
             m_t0 = st.number_input(
                 BOOKLET_TANKS[0][0].replace(" (топливо, лев)", ""),
@@ -330,46 +296,6 @@ with tab_stab:
             m_t7 = st.number_input(BOOKLET_TANKS[7][0], 0.0, 500.0, key="stab_t7", step=1.0, help=f"Макс. ≈ {BOOKLET_TANKS[7][3]:.2f} т")
             m_t8 = st.number_input(BOOKLET_TANKS[8][0], 0.0, 500.0, key="stab_t8", step=1.0, help=f"Макс. ≈ {BOOKLET_TANKS[8][3]:.2f} т")
 
-    with st.expander("Положение цистерн: LCG от кормы и KG над килем", expanded=False):
-        st.markdown(
-            "Для расчёта моментов по умолчанию используются **LCG** (абсцисса центра тяжести жидкости от шп. кормы вперёд, м) "
-            "и **KG** (аппликата над килем, м) из **разд. 6 буклета** — см. `tank_booklet.py`."
-        )
-        st.toggle(
-            "Задать свои LCG и KG для девяти цистерн буклета",
-            key="stab_use_custom_tank_geometry",
-            help="Если включено, в таблицу ниже подставляются введённые LCG/KG вместо констант буклета.",
-        )
-        if st.session_state.get("stab_use_custom_tank_geometry"):
-            if st.button("Сбросить LCG/KG к буклету", key="stab_reset_tank_geom"):
-                for k, v in _tank_geometry_preset_state().items():
-                    st.session_state[k] = v
-                st.rerun()
-            for i in range(9):
-                lab = BOOKLET_TANKS[i][0]
-                r1, r2, r3 = st.columns([2.4, 1, 1])
-                with r1:
-                    st.markdown(f"**{i}.** {lab}")
-                with r2:
-                    st.number_input(
-                        "LCG, м",
-                        0.0,
-                        float(LBP_M) + 10.0,
-                        key=f"stab_tank_lcg_{i}",
-                        step=0.001,
-                        format="%.3f",
-                        help="От шп. кормы вперёд (как в буклете).",
-                    )
-                with r3:
-                    st.number_input(
-                        "KG, м",
-                        0.0,
-                        25.0,
-                        key=f"stab_tank_kg_{i}",
-                        step=0.001,
-                        format="%.3f",
-                    )
-
     with st.container(border=True):
         st.markdown("##### Уголь (насыпной груз в трюмах)")
         st.caption(x_note)
@@ -383,12 +309,12 @@ with tab_stab:
         else:
             _coal_x_rng = (-1.0, float(LBP_M) + 2.0)
         x_coal = st.slider(
-            "X угля, м (ползунок вдоль длины; на плане ниже тот же груз в координатах от кормы)",
+            "X угля, м",
             float(_coal_x_rng[0]),
             float(_coal_x_rng[1]),
             key="stab_x_coal",
             step=0.05,
-            help="Совпадает с колонкой X в таблице. План судна показывает LCG от кормы.",
+            help="Совпадает с колонкой X в таблице ниже (LCG от кормы при отображении в числах таблицы).",
         )
 
     tank_mass = [float(st.session_state.get(f"stab_t{i}", 0.0)) for i in range(9)]
@@ -397,16 +323,10 @@ with tab_stab:
         {COL_NAME: "Судно порожнее", COL_MASS: m_light, COL_X: x_light, COL_KG: kg_light},
         {COL_NAME: "Судовое снабжение", COL_MASS: m_stores, COL_X: x_stores, COL_KG: kg_stores},
     ]
-    use_custom_tank = bool(st.session_state.get("stab_use_custom_tank_geometry", False))
     for i, tm in enumerate(tank_mass):
         if tm <= 0:
             continue
-        name, lcg_def, kg_def, _mx = BOOKLET_TANKS[i]
-        if use_custom_tank:
-            lcg_ap = float(st.session_state.get(f"stab_tank_lcg_{i}", lcg_def))
-            kg_t = float(st.session_state.get(f"stab_tank_kg_{i}", kg_def))
-        else:
-            lcg_ap, kg_t = lcg_def, kg_def
+        name, lcg_ap, kg_t, _mx = BOOKLET_TANKS[i]
         xg = x_table_from_lcg_ap(lcg_ap, LBP_M, x_from_midship=x_from_midship)
         rows.append({COL_NAME: name, COL_MASS: tm, COL_X: xg, COL_KG: kg_t})
     if float(m_fuel_svc) > 0:
@@ -422,61 +342,6 @@ with tab_stab:
         rows.append({COL_NAME: "Уголь", COL_MASS: m_coal, COL_X: x_coal, COL_KG: kg_coal})
 
     edited = pd.DataFrame(rows)
-    with st.container(border=True):
-        st.markdown("##### План судна (вид сверху)")
-        st.caption(
-            "Прямоугольник — корпус по **LOA**; пунктир — **мидель**. Точки — при **массе > 0**; ось — **LCG от кормы**. "
-            "Клик **вдоль центральной линии** (по «палубе») задаёт X для выбранной позиции выше."
-        )
-        st.radio(
-            "Клик по плану задаёт продольный **X** для:",
-            (
-                "Судовое снабжение (припасы)",
-                "Уголь",
-                "Топливо расходные",
-            ),
-            horizontal=True,
-            key="plan_x_target",
-            help="Кликните по корпусу или палубе: координата по длине перенесётся в поле X выбранной строки. Масштаб схемы зафиксирован — колесо не увеличивает график.",
-        )
-        fig_plan = load_plan_figure(
-            edited,
-            LBP_M,
-            float(SHIP["loa_m"]),
-            float(SHIP["beam_m"]),
-            from_midship=x_from_midship,
-        )
-        events = plotly_events(
-            fig_plan,
-            click_event=True,
-            select_event=False,
-            hover_event=False,
-            key="load_plan_click",
-            override_height=440,
-            override_width="100%",
-        )
-        if events:
-            try:
-                x_ap = float(events[0]["x"])
-            except (KeyError, TypeError, ValueError, IndexError):
-                x_ap = None
-            if x_ap is not None:
-                x_tbl = table_x_from_lcg_ap(x_ap, LBP_M, from_midship=x_from_midship)
-                x_tbl = float(np.clip(x_tbl, -200.0, 200.0))
-                tgt = str(st.session_state.get("plan_x_target", ""))
-                sig = (tgt, round(x_ap, 3), round(x_tbl, 3))
-                if st.session_state.get("_plan_click_sig") != sig:
-                    st.session_state["_plan_click_sig"] = sig
-                    _pk = None
-                    if "припасы" in tgt or "Снабжение" in tgt:
-                        _pk = "stab_x_stores"
-                    elif "Уголь" in tgt:
-                        _pk = "stab_x_coal"
-                    elif "Расходные" in tgt or "расходные" in tgt:
-                        _pk = "stab_x_fuel_svc"
-                    if _pk is not None:
-                        st.session_state["_plan_click_pending"] = {_pk: x_tbl}
-                    st.rerun()
 
     tbl_excel = trim_table_excel_with_total(
         edited, x_from_midship=x_from_midship, lbp_m=LBP_M

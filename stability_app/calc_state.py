@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-STATE_VERSION = 2
+STATE_VERSION = 3
 APP_ID = "raid8-stability"
 
 # Ключи session_state, которые участвуют в сохранении (сайдбар — явные key в app.py)
@@ -38,25 +38,6 @@ STAB_KEYS = (
     "stab_m_coal",
     "stab_x_coal",
     "stab_kg_coal",
-    "stab_use_custom_tank_geometry",
-    "stab_tank_lcg_0",
-    "stab_tank_lcg_1",
-    "stab_tank_lcg_2",
-    "stab_tank_lcg_3",
-    "stab_tank_lcg_4",
-    "stab_tank_lcg_5",
-    "stab_tank_lcg_6",
-    "stab_tank_lcg_7",
-    "stab_tank_lcg_8",
-    "stab_tank_kg_0",
-    "stab_tank_kg_1",
-    "stab_tank_kg_2",
-    "stab_tank_kg_3",
-    "stab_tank_kg_4",
-    "stab_tank_kg_5",
-    "stab_tank_kg_6",
-    "stab_tank_kg_7",
-    "stab_tank_kg_8",
 )
 
 HOLDS_KEYS = (
@@ -77,7 +58,7 @@ HOLDS_KEYS = (
 
 ALL_KEYS: tuple[str, ...] = SIDEBAR_KEYS + STAB_KEYS + HOLDS_KEYS
 
-BOOL_KEYS = ("sb_x_from_midship", "stab_use_custom_tank_geometry")
+BOOL_KEYS = ("sb_x_from_midship",)
 
 
 def _json_scalar(v: Any) -> Any:
