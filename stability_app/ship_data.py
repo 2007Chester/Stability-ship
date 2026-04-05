@@ -8,6 +8,7 @@ from pathlib import Path
 _SHIP = {
     "name": "РЕЙД-8 (тип Kimtrans SPB 3210)",
     "loa_m": 97.536,
+    "lbp_m": 96.78,
     "beam_m": 24.384,
     "depth_m": 6.096,
     "draft_summer_m": 4.439,
@@ -21,6 +22,7 @@ _SHIP = {
         "GZ(φ) = GZ₀(Δ,φ) − VCG·sin φ. Критерии — Резолюция ИМО A.749 (как в буклете)."
     ),
 }
+_SHIP.setdefault("lbp_m", 96.78)
 
 with open(Path(__file__).resolve().parent / "_embedded.json", "r", encoding="utf-8") as f:
     _emb = json.load(f)
@@ -47,3 +49,4 @@ __all__ = [
 ]
 
 SHIP = dict(_SHIP)
+SHIP.setdefault("lbp_m", 96.78)

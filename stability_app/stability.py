@@ -36,6 +36,83 @@ def draft_from_displacement(delta_t: float) -> float:
     return _interp(HYDRO_DISP, HYDRO_T, delta_t)
 
 
+def bm_longitudinal_m(lbp_m: float, beam_m: float, t_m: float) -> float:
+    """
+    Продольный метацентрический радиус BM_L ≈ I_L/∇ для прямоугольной ватерлинии
+    (баржа): I_L = L³B/12, ∇ = L B T.
+    """
+    t = max(float(t_m), 0.01)
+    lbp = max(float(lbp_m), 0.01)
+    i_l = (lbp**3) * float(beam_m) / 12.0
+    vol = lbp * float(beam_m) * t
+    return float(i_l / vol)
+
+
+def mctc_t_m_per_cm(
+    delta_t: float,
+    lbp_m: float,
+    beam_m: float,
+    t_m: float,
+) -> float:
+    """
+    Момент, изменяющий дифферент на 1 см, т·м/см (оценка для прямоугольного корпуса):
+    MCTC ≈ Δ · BM_L / (LBP · 100).
+    """
+    bm_l = bm_longitudinal_m(lbp_m, beam_m, t_m)
+    lbp = max(float(lbp_m), 0.01)
+    return float(delta_t * bm_l / (lbp * 100.0))
+
+
+@dataclass(frozen=True)
+class LongitudinalDrafts:
+    """Осадки по перпендикулярам и дифферент (оценка)."""
+
+    t_fwd_m: float
+    t_aft_m: float
+    trim_cm: float  # >0 — корма глубже (дифферент на корму)
+    trimming_moment_t_m: float
+    mctc_t_m_per_cm: float
+    lcg_from_ap_m: float
+    lcf_from_ap_m: float
+
+
+def drafts_fwd_aft_from_lcg(
+    delta_t: float,
+    t_mean_m: float,
+    lcg_from_ap_m: float,
+    *,
+    lbp_m: float,
+    beam_m: float,
+    lcf_from_ap_m: float | None = None,
+) -> LongitudinalDrafts:
+    """
+    Оценка осадок нос/корма по заданному LCG и LCF (м от шп. кормы).
+
+    Подгоночный момент M = Δ·(LCG − LCF) (т·м). Дифферент (см) = −M / MCTC — так при LCG кормее LCF
+    (меньше координата от кормы) момент «на корму» положителен по осадкам.
+    При LCF на середине LBP: T_корма = T_ср + trim_m/2, T_нос = T_ср − trim_m/2,
+    trim_m = (T_корма − T_нос)/2 в сумме с средней даёт расклад по носу/корме.
+
+    В буклете нет таблиц LCB/LCF/MCT — используется геометрия прямоугольной ватерлинии.
+    """
+    lcf = float(lcf_from_ap_m) if lcf_from_ap_m is not None else float(lbp_m) / 2.0
+    tm = float(delta_t) * (float(lcg_from_ap_m) - lcf)
+    mctc = mctc_t_m_per_cm(delta_t, lbp_m, beam_m, t_mean_m)
+    trim_cm = float(-tm / mctc) if mctc > 1e-12 else 0.0
+    trim_m = trim_cm / 100.0
+    t_aft = float(t_mean_m) + trim_m / 2.0
+    t_fwd = float(t_mean_m) - trim_m / 2.0
+    return LongitudinalDrafts(
+        t_fwd_m=t_fwd,
+        t_aft_m=t_aft,
+        trim_cm=trim_cm,
+        trimming_moment_t_m=float(tm),
+        mctc_t_m_per_cm=float(mctc),
+        lcg_from_ap_m=float(lcg_from_ap_m),
+        lcf_from_ap_m=lcf,
+    )
+
+
 def kmt_from_displacement(delta_t: float) -> float:
     return _interp(HYDRO_DISP, HYDRO_KMT, delta_t)
 
@@ -46,10 +123,19 @@ def kb_from_displacement(delta_t: float) -> float:
 
 def gz0_at(delta_t: float, phi_deg: float) -> float:
     """Плечо ПСО из буклета при VCG=0 (от КН), интерполяция по Δ и углу."""
-    col = np.asarray(GZ_ANGLES_DEG, float)
-    i = np.searchsorted(col, phi_deg)
-    if i <= 0:
+    phi_deg = float(phi_deg)
+    if phi_deg <= 0:
         return 0.0
+    col = np.asarray(GZ_ANGLES_DEG, float)
+    min_a = float(col[0])
+    if phi_deg < min_a:
+        gz_at_min = float(
+            np.interp(delta_t, GZ_DISPLACEMENTS, [row[0] for row in GZ0_TABLE])
+        )
+        return gz_at_min * (phi_deg / min_a)
+    # side='right': при φ = первому углу таблицы (напр. 5°) даёт i ≥ 1, иначе левый
+    # searchsorted возвращает 0 и GZ₀ ошибочно обнулялся.
+    i = int(np.searchsorted(col, phi_deg, side="right"))
     if i >= len(col):
         i = len(col) - 1
         t = 1.0
@@ -89,7 +175,8 @@ def integrate_gz_m_rad(phi_deg: Sequence[float], gz_m: Sequence[float], a_deg: f
     phs = ph[sl]
     gzs = gz[sl]
     xr = np.radians(phs)
-    return float(np.trapz(gzs, xr))
+    _trap = getattr(np, "trapezoid", np.trapz)
+    return float(_trap(gzs, xr))
 
 
 def build_fine_gz(
@@ -103,8 +190,8 @@ def build_fine_gz(
     for p in phis:
         pr = math.radians(float(p))
         g = gz0_at(delta_t, float(p)) - vcg_m * math.sin(pr)
-        gzs.append(max(g, -1.0))
-    return phis, np.asarray(gzs)
+        gzs.append(g)
+    return phis, np.asarray(gzs, dtype=float)
 
 
 @dataclass
@@ -201,6 +288,25 @@ def combine_masses(
         return 0.0, 0.0
     kg = sum(m * kg for m, kg in items) / total
     return total, kg
+
+
+def cargo_mass_from_drafts(
+    t_fwd_m: float,
+    t_aft_m: float,
+    mass_without_hold_cargo_t: float,
+) -> tuple[float, float, float]:
+    """
+    Масса груза в трюмах (т) по осадкам носа и кормы.
+
+    Водоизмещение берётся по **средней** осадке T_ср = (T_нос + T_корма) / 2 — как в рабочих
+    оценках при умеренном дифференте (таблица буклета — для равных ватерлиний).
+
+    Возвращает (Δ, T_ср, M_груз_трюмы).
+    """
+    t_mean = 0.5 * (float(t_fwd_m) + float(t_aft_m))
+    delta = displacement_from_draft(t_mean)
+    cargo = max(delta - float(mass_without_hold_cargo_t), 0.0)
+    return float(delta), float(t_mean), float(cargo)
 
 
 def coal_mass_from_draft(
